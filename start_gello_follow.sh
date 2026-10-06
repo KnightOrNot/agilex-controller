@@ -3,10 +3,10 @@
 set -Eeuo pipefail
 
 projects_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-agilex_dir="$projects_dir/agilexrobotics"
-gello_dir="$projects_dir/gello-software"
+agilex_dir="$projects_dir/agilex-sdk-python"
+gello_dir="$projects_dir/agilex-gello-software"
 gello_python="$gello_dir/.venv/bin/python"
-gello_cli=(uv run --project "$gello_dir" gello)
+gello_cli=(uv run --project "$gello_dir" agilex-gello-software)
 gello_port="/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBM4Z46-if00-port0"
 can_interface="can0"
 can_bitrate="1000000"
@@ -30,8 +30,8 @@ usage() {
   --gello-port PATH   GELLO Dynamixel 串口
   --can-interface IF  CAN 接口，默认 can0
   --can-bitrate RATE  CAN 波特率，默认 1000000
-  --host HOST         ag-gello-server 地址，默认 127.0.0.1
-  --port PORT         ag-gello-server 端口，默认 6001
+  --host HOST         agilex-sdk-python-server 地址，默认 127.0.0.1
+  --port PORT         agilex-sdk-python-server 端口，默认 6001
   --hz HZ             GELLO 跟随和 PiPER-X JS 命令频率，默认 50
   --yes               不询问运动确认
   -h, --help          显示帮助
@@ -117,11 +117,11 @@ while (( $# > 0 )); do
 done
 
 if [[ ! -d "$agilex_dir" || ! -d "$gello_dir" ]]; then
-    echo "错误：agilexrobotics 或 gello-software 项目目录不存在。" >&2
+    echo "错误：agilex-sdk-python 或 agilex-gello-software 项目目录不存在。" >&2
     exit 1
 fi
 if [[ ! -x "$gello_python" ]]; then
-    echo "错误：找不到 $gello_python，请先安装 gello-software 环境。" >&2
+    echo "错误：找不到 $gello_python，请先安装 agilex-gello-software 环境。" >&2
     exit 1
 fi
 if ! "$gello_python" -c '
@@ -166,7 +166,7 @@ if [[ ! -e "/sys/class/net/$can_interface" ]]; then
 fi
 arm_status_json="$(
     cd "$agilex_dir"
-    uv run ag status --channel "$can_interface" --wait 1.0
+    uv run agilex-sdk-python status --channel "$can_interface" --wait 1.0
 )"
 printf '%s\n' "$arm_status_json"
 if ! printf '%s' "$arm_status_json" | "$gello_python" -c '
@@ -239,11 +239,11 @@ if [[ "$assume_yes" != true ]]; then
 fi
 
 echo "========== [4/6] 启动 PiPER-X 服务端并使用 JS 分步回零…… =========="
-server_log="$(mktemp --tmpdir ag-gello-server.XXXXXX.log)"
+server_log="$(mktemp --tmpdir agilex-sdk-python-server.XXXXXX.log)"
 (
     cd "$agilex_dir"
     # 服务端使用独立 session，避免终端 Ctrl+C 在安全回零前同时杀掉它。
-    exec setsid uv run ag-gello-server \
+    exec setsid uv run agilex-sdk-python-server \
         --channel "$can_interface" \
         --host "$server_host" \
         --port "$server_port" \
@@ -253,7 +253,7 @@ server_pid=$!
 
 sleep 2
 if ! kill -0 "$server_pid" 2>/dev/null; then
-    echo "错误：ag-gello-server 启动失败：" >&2
+    echo "错误：agilex-sdk-python-server 启动失败：" >&2
     cat "$server_log" >&2
     exit 1
 fi

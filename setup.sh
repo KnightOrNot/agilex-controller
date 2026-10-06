@@ -14,7 +14,7 @@ usage() {
     cat <<'EOF'
 用法：./setup.sh [选项]
 
-初始化 robot 的 submodule、pyenv Python、三个 uv 环境和系统依赖。
+初始化 agilex-controller 的 submodule、pyenv Python、三个 uv 环境和系统依赖。
 脚本不会配置 CAN、访问串口或向机械臂发送命令，可安全重复执行。
 
 选项：
@@ -79,7 +79,7 @@ case "$gello_extra" in
 esac
 
 cd "$root_dir"
-[[ -f .gitmodules ]] || fail "请从 robot 仓库根目录运行本脚本"
+[[ -f .gitmodules ]] || fail "请从 agilex-controller 仓库根目录运行本脚本"
 
 if [[ "$install_system" == true ]]; then
     log "[1/7] 安装 Ubuntu 系统依赖"
@@ -113,10 +113,10 @@ if ! command -v pyenv >/dev/null 2>&1; then
 fi
 
 if [[ "$check_only" != true ]] && [[ -f "$HOME/.bashrc" ]] \
-    && ! grep -Fq '# robot setup: pyenv' "$HOME/.bashrc"; then
+    && ! grep -Fq '# agilex-controller setup: pyenv' "$HOME/.bashrc"; then
     {
         echo
-        echo '# robot setup: pyenv'
+        echo '# agilex-controller setup: pyenv'
         echo 'export PYENV_ROOT="$HOME/.pyenv"'
         echo '[[ -d "$PYENV_ROOT/bin" ]] && export PATH="$PYENV_ROOT/bin:$PATH"'
         echo 'eval "$(pyenv init - bash)"'
@@ -146,15 +146,15 @@ if [[ "$update_submodules" == true ]]; then
     git submodule sync
     git submodule update --init
     if [[ "$install_simulation_assets" == true ]]; then
-        git -C gello-software submodule sync
-        git -C gello-software submodule update \
+        git -C agilex-gello-software submodule sync
+        git -C agilex-gello-software submodule update \
             --init third_party/mujoco_menagerie
     fi
 else
     log "[4/7] 检查 Git submodule"
 fi
 
-for submodule_path in agilexrobotics gello-software lerobot-converter; do
+for submodule_path in agilex-sdk-python agilex-gello-software lerobot-converter; do
     [[ -f "$submodule_path/pyproject.toml" ]] \
         || fail "$submodule_path 尚未初始化；请取消 --skip-submodules"
 done
@@ -189,11 +189,11 @@ sync_project() {
 }
 
 log "[5/7] 使用 pyenv Python 同步 uv 环境"
-sync_project agilexrobotics
+sync_project agilex-sdk-python
 if [[ -n "$gello_extra" ]]; then
-    sync_project gello-software --extra "$gello_extra"
+    sync_project agilex-gello-software --extra "$gello_extra"
 else
-    sync_project gello-software
+    sync_project agilex-gello-software
 fi
 sync_project lerobot-converter --extra dataset
 
@@ -203,9 +203,9 @@ if [[ "$check_only" != true ]]; then
 fi
 [[ -d data/raw && -d data/lerobot ]] || fail "data/raw 或 data/lerobot 不存在"
 
-agilexrobotics/.venv/bin/ag --help >/dev/null
-agilexrobotics/.venv/bin/ag-gello-server --help >/dev/null
-gello-software/.venv/bin/gello --help >/dev/null
+agilex-sdk-python/.venv/bin/agilex-sdk-python --help >/dev/null
+agilex-sdk-python/.venv/bin/agilex-sdk-python-server --help >/dev/null
+agilex-gello-software/.venv/bin/agilex-gello-software --help >/dev/null
 lerobot-converter/.venv/bin/lerobot-converter --help >/dev/null
 ffmpeg -version >/dev/null 2>&1 || fail "FFmpeg 不可用"
 lerobot-converter/.venv/bin/python -c \

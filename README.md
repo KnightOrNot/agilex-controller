@@ -1,4 +1,4 @@
-# Robot：PiPER-X 与 GELLO 数据采集系统
+# agilex-controller：PiPER-X 与 GELLO 数据采集系统
 
 本项目用于完成 AgileX PiPER-X 机械臂控制、GELLO 遥操作示教、原始数据记录，以及 LeRobot Dataset v3 离线转换。顶层仓库负责组合三个相互独立的子项目和两个安全启动脚本；三个子项目通过 Git submodule 固定版本，各自维护独立的 Python 环境和依赖。
 
@@ -8,9 +8,9 @@
 ## （1）项目架构
 
 ```text
-robot/
-├── agilexrobotics/          # submodule：PiPER-X CAN 驱动与 ZMQ 控制服务
-├── gello-software/          # submodule：GELLO 读取、跟随与 raw 数据记录
+agilex-controller/
+├── agilex-sdk-python/          # submodule：PiPER-X CAN 驱动与 ZMQ 控制服务
+├── agilex-gello-software/          # submodule：GELLO 读取、跟随与 raw 数据记录
 ├── lerobot-converter/       # submodule：raw → LeRobot Dataset v3 离线转换
 ├── data/
 │   ├── raw/                 # 不可变的原始 session
@@ -27,14 +27,14 @@ robot/
 
 | 子项目                 | Python | 职责                                       |
 | ------------------- | ------ | ---------------------------------------- |
-| `agilexrobotics`    | 3.11   | 独占 PiPER-X CAN，读取反馈并提供 `ag-gello-server` |
-| `gello-software`    | 3.11   | 独占 GELLO 串口，生成跟随 action 并记录 raw session  |
+| `agilex-sdk-python`    | 3.11   | 独占 PiPER-X CAN，读取反馈并提供 `agilex-sdk-python-server` |
+| `agilex-gello-software`    | 3.11   | 独占 GELLO 串口，生成跟随 action 并记录 raw session  |
 | `lerobot-converter` | 3.12   | 离线校验 raw session，生成 LeRobot Dataset v3   |
 
 完整运行链路：
 
 ```text
-GELLO → gello-software → ZMQ → agilexrobotics → CAN → PiPER-X
+GELLO → agilex-gello-software → ZMQ → agilex-sdk-python → CAN → PiPER-X
                  │
                  └── data/raw/session_*
                               │
@@ -79,8 +79,8 @@ sudo ldconfig
 Python 解释器由 pyenv 管理，uv 只使用 pyenv 提供的解释器创建 `.venv` 并同步依赖。三个子项目必须保留各自的 `.venv`，不要在顶层创建一个环境混装全部依赖：
 
 ```text
-agilexrobotics/.venv      Python 3.11：CAN、pyAgxArm、ZMQ
-gello-software/.venv      Python 3.11：Dynamixel、GELLO、实时记录
+agilex-sdk-python/.venv      Python 3.11：CAN、pyAgxArm、ZMQ
+agilex-gello-software/.venv      Python 3.11：Dynamixel、GELLO、实时记录
 lerobot-converter/.venv   Python 3.12：LeRobot、PyTorch、Parquet、转换
 ```
 
@@ -93,15 +93,15 @@ lerobot-converter/.venv   Python 3.12：LeRobot、PyTorch、Parquet、转换
 使用 SSH：
 
 ```bash
-git clone git@github.com:right-or-not/robot.git
-cd robot
+git clone git@github.com:KnightOrNot/agilex-controller.git
+cd agilex-controller
 ```
 
 未配置 GitHub SSH 密钥时使用 HTTPS：
 
 ```bash
-git clone https://github.com/right-or-not/robot.git
-cd robot
+git clone https://github.com/KnightOrNot/agilex-controller.git
+cd agilex-controller
 ```
 
 `setup.sh` 会按顶层锁定的 commit 初始化三个一级子项目，不要求 clone 时添加 `--recurse-submodules`。体积较大且正常 PiPER-X 开发不需要的 MuJoCo Menagerie 默认不会下载。
@@ -143,7 +143,7 @@ git submodule update --init
 只有仿真开发需要额外执行：
 
 ```bash
-git -C gello-software submodule update \
+git -C agilex-gello-software submodule update \
   --init third_party/mujoco_menagerie
 ```
 
@@ -156,12 +156,12 @@ pyenv install -s "$(pyenv latest -k 3.12)"
 python311="$(PYENV_VERSION="$(pyenv latest -k 3.11)" pyenv which python)"
 python312="$(PYENV_VERSION="$(pyenv latest -k 3.12)" pyenv which python)"
 
-UV_NO_MANAGED_PYTHON=1 uv sync --project agilexrobotics --frozen --python "$python311"
-UV_NO_MANAGED_PYTHON=1 uv sync --project gello-software --frozen --python "$python311"
+UV_NO_MANAGED_PYTHON=1 uv sync --project agilex-sdk-python --frozen --python "$python311"
+UV_NO_MANAGED_PYTHON=1 uv sync --project agilex-gello-software --frozen --python "$python311"
 UV_NO_MANAGED_PYTHON=1 uv sync --project lerobot-converter --frozen --extra dataset --python "$python312"
 ```
 
-这里的 `UV_NO_MANAGED_PYTHON=1` 防止 uv 自行下载另一套 Python。DynamixelSDK 已由 `gello-software/uv.lock` 管理，不再手工 clone。最后验证：
+这里的 `UV_NO_MANAGED_PYTHON=1` 防止 uv 自行下载另一套 Python。DynamixelSDK 已由 `agilex-gello-software/uv.lock` 管理，不再手工 clone。最后验证：
 
 ```bash
 ffmpeg -version
@@ -182,7 +182,7 @@ sudo usermod -aG dialout "$USER"
 ls -l /dev/serial/by-id/
 ```
 
-默认启动脚本使用以下设备；如果你的路径不同，运行时必须通过 `--gello-port` 指定，并确保该路径已经在 `gello-software/src/gello/agents/gello_agent.py` 的 `PORT_CONFIG_MAP` 中正确配置：
+默认启动脚本使用以下设备；如果你的路径不同，运行时必须通过 `--gello-port` 指定，并确保该路径已经在 `agilex-gello-software/src/agilex_gello_software/agents/gello_agent.py` 的 `PORT_CONFIG_MAP` 中正确配置：
 
 ```text
 /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBM4Z46-if00-port0
@@ -193,14 +193,14 @@ ls -l /dev/serial/by-id/
 连接 USB-CAN 和机械臂、给 PiPER-X 上电并释放急停，然后配置 CAN：
 
 ```bash
-./agilexrobotics/scripts/config_can.sh can0 1000000 100
+./agilex-sdk-python/scripts/config_can.sh can0 1000000 100
 ```
 
 只读检查 PiPER-X：
 
 ```bash
-cd agilexrobotics
-uv run ag status --channel can0 --wait 1.0
+cd agilex-sdk-python
+uv run agilex-sdk-python status --channel can0 --wait 1.0
 cd ..
 ```
 
@@ -209,7 +209,7 @@ cd ..
 只读检查 GELLO，将路径替换为当前设备的 `by-id` 路径：
 
 ```bash
-uv run --project gello-software gello read \
+uv run --project agilex-gello-software agilex-gello-software read \
   --gello-port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBM4Z46-if00-port0
 ```
 
@@ -263,33 +263,33 @@ git submodule update --init
 需要升级 submodule 时，应先在对应子项目仓库完成修改、测试、提交和推送，再回到顶层记录新的 commit。例如：
 
 ```bash
-cd agilexrobotics
+cd agilex-sdk-python
 git switch main
 git pull --ff-only
 cd ..
-git add agilexrobotics
-git commit -m "chore: update agilexrobotics submodule"
+git add agilex-sdk-python
+git commit -m "chore: update agilex-sdk-python submodule"
 ```
 
-`gello-software` 和 `lerobot-converter` 使用相同流程。不要只在 submodule 中产生未提交改动后提交顶层 gitlink，否则其他开发者无法取得这些修改。
+`agilex-gello-software` 和 `lerobot-converter` 使用相同流程。不要只在 submodule 中产生未提交改动后提交顶层 gitlink，否则其他开发者无法取得这些修改。
 
 ### 3. 查看 submodule 状态
 
 ```bash
 git submodule status
 git status --short
-git -C agilexrobotics status --short
-git -C gello-software status --short
+git -C agilex-sdk-python status --short
+git -C agilex-gello-software status --short
 git -C lerobot-converter status --short
 ```
 
 ## （5）文档导航
 
 - [顶层开发与调试手册](docs/DEVELOPMENT.md)：完整联调顺序、频率实验、记录、转换与故障排查
-- [agilexrobotics README](agilexrobotics/README.md)：PiPER-X 环境和只读 CAN 验证
-- [agilexrobotics 开发手册](agilexrobotics/docs/DEVELOPMENT.md)：`ag`、硬件命令和 GELLO 服务参数
-- [gello-software README](gello-software/README.md)：GELLO 环境、串口权限和只读检查
-- [gello-software 开发手册](gello-software/docs/DEVELOPMENT.md)：映射、跟随、记录与 Dynamixel 排错
+- [agilex-sdk-python README](agilex-sdk-python/README.md)：PiPER-X 环境和只读 CAN 验证
+- [agilex-sdk-python 开发手册](agilex-sdk-python/docs/DEVELOPMENT.md)：`agilex-sdk-python`、硬件命令和 GELLO 服务参数
+- [agilex-gello-software README](agilex-gello-software/README.md)：GELLO 环境、串口权限和只读检查
+- [agilex-gello-software 开发手册](agilex-gello-software/docs/DEVELOPMENT.md)：映射、跟随、记录与 Dynamixel 排错
 - [lerobot-converter README](lerobot-converter/README.md)：独立转换器的输入/输出格式和快速开始
 - [lerobot-converter 开发手册](lerobot-converter/docs/DEVELOPMENT.md)：raw schema、重采样、LeRobot v3 输出和质量报告
 

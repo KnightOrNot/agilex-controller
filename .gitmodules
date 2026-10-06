@@ -1,9 +1,9 @@
-[submodule "agilexrobotics"]
-	path = agilexrobotics
-	url = git@github.com:KnightOrNot/agilexrobotics.git
-[submodule "gello-software"]
-	path = gello-software
-	url = git@github.com:KnightOrNot/gello-software.git
+[submodule "agilex-sdk-python"]
+	path = agilex-sdk-python
+	url = git@github.com:KnightOrNot/agilex-sdk-python.git
+[submodule "agilex-gello-software"]
+	path = agilex-gello-software
+	url = git@github.com:KnightOrNot/agilex-gello-software.git
 [submodule "lerobot-converter"]
 	path = lerobot-converter
 	url = git@github.com:KnightOrNot/lerobot-converter.git

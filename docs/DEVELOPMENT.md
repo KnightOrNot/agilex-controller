@@ -1,6 +1,6 @@
 # Robot 开发与调试手册
 
-本文档记录 PiPER-X/GELLO 联调、数据记录、频率实验、退出保护和 LeRobot 转换的详细流程。首次获取项目、初始化 submodule 和搭建三个 Python 环境请先阅读[项目 README](../README.md)。以下命令默认在顶层 `robot/` 目录执行。
+本文档记录 PiPER-X/GELLO 联调、数据记录、频率实验、退出保护和 LeRobot 转换的详细流程。首次获取项目、初始化 submodule 和搭建三个 Python 环境请先阅读[项目 README](../README.md)。以下命令默认在顶层 `agilex-controller/` 目录执行。
 
 ## （1）项目总览
 
@@ -9,9 +9,9 @@
 本项目用于完成 PiPER-X 机械臂控制、GELLO 遥操作示教、原始数据采集，以及 LeRobot 标准数据集生成。各子项目保持独立职责，并通过明确的进程边界和数据接口协同工作。
 
 ```text
-robot/
-├── agilexrobotics/          # PiPER-X CAN 驱动、状态反馈和 ZMQ 控制服务
-├── gello-software/          # GELLO Dynamixel 读取、目标映射和实时跟随
+agilex-controller/
+├── agilex-sdk-python/          # PiPER-X CAN 驱动、状态反馈和 ZMQ 控制服务
+├── agilex-gello-software/          # GELLO Dynamixel 读取、目标映射和实时跟随
 ├── lerobot-converter/       # 原始数据校验与 LeRobot Dataset v3 离线转换
 ├── data/                    # 采集数据根目录，不属于任何代码子项目
 │   ├── raw/                 # 实时采集的原始数据，是不可变数据源
@@ -25,16 +25,16 @@ robot/
 
 项目包含三个相互独立的工作域：
 
-- `agilexrobotics` 负责直接访问 PiPER-X CAN 总线，是机械臂状态和控制的唯一所有者。
-- `gello-software` 负责读取 GELLO，并将示教器状态转换为 PiPER-X 实际执行的七维控制目标。
-- `lerobot-converter` 负责校验轻量原始记录格式，并在控制结束后将原始数据离线转换为 LeRobot Dataset v3；实时记录由 `gello-software` 完成。
+- `agilex-sdk-python` 负责直接访问 PiPER-X CAN 总线，是机械臂状态和控制的唯一所有者。
+- `agilex-gello-software` 负责读取 GELLO，并将示教器状态转换为 PiPER-X 实际执行的七维控制目标。
+- `lerobot-converter` 负责校验轻量原始记录格式，并在控制结束后将原始数据离线转换为 LeRobot Dataset v3；实时记录由 `agilex-gello-software` 完成。
 
 #### 1.1 数据目录
 
 代码与采集数据保持分离，所有数据统一放在顶层仓库的 `data/`：
 
 ```text
-robot/data/
+agilex-controller/data/
 ├── raw/
 │   └── session_YYYYMMDD_HHMMSS/
 │       ├── manifest.json
@@ -63,7 +63,7 @@ lerobot_data_root="$projects_dir/data/lerobot"
 
 具体程序仍应允许通过参数覆盖默认路径，以便以后将大量数据写入独立磁盘。代码中不得写死 `/home/right_or_not` 等机器相关的绝对路径。
 
-`robot/data/` 位于三个 submodule 之外，由顶层仓库的 `.gitignore` 统一忽略。真实采集数据不应提交到顶层仓库或任何子项目仓库；修改忽略规则时必须继续保留 `/data/`。
+`agilex-controller/data/` 位于三个 submodule 之外，由顶层仓库的 `.gitignore` 统一忽略。真实采集数据不应提交到顶层仓库或任何子项目仓库；修改忽略规则时必须继续保留 `/data/`。
 
 实时跟随链路如下：
 
@@ -71,13 +71,13 @@ lerobot_data_root="$projects_dir/data/lerobot"
 GELLO Dynamixel
       │ FTDI 串口
       ▼
-gello-software / piper_x_follow.py
+agilex-gello-software / piper_x_follow.py
       │ 方向映射、绝对对齐、单步限幅
       │ 7 维目标：[J1..J6(rad), gripper(0..1)]
       ▼
 ZMQ tcp://127.0.0.1:6001
       ▼
-agilexrobotics / ag-gello-server
+agilex-sdk-python / agilex-sdk-python-server
       │ JS 流式控制
       ▼
 PiPER-X / CAN
@@ -122,10 +122,10 @@ LeRobot Dataset v3
 项目使用 pyenv 安装和选择 Python，使用 uv 创建每个子项目的 `.venv`、同步锁定依赖并运行命令。虚拟环境只影响 Python 解释器和包依赖，不会阻止进程通过 ZMQ、CAN 或串口通信。
 
 ```text
-agilexrobotics/.venv
-    └── CAN 驱动和 ag-gello-server
+agilex-sdk-python/.venv
+    └── CAN 驱动和 agilex-sdk-python-server
 
-gello-software/.venv
+agilex-gello-software/.venv
     └── GELLO 串口、实时跟随和轻量原始记录
 
 lerobot-converter/.venv
@@ -137,9 +137,9 @@ lerobot-converter/.venv
 总 shell 脚本必须显式调用每个环境中的解释器或使用 `uv run --project`，不依赖当前终端是否激活了某个虚拟环境。例如：
 
 ```bash
-gello_python="$projects_dir/gello-software/.venv/bin/python"
+gello_python="$projects_dir/agilex-gello-software/.venv/bin/python"
 converter_python="$projects_dir/lerobot-converter/.venv/bin/python"
-gello_cli=(uv run --project "$projects_dir/gello-software" gello)
+gello_cli=(uv run --project "$projects_dir/agilex-gello-software" agilex-gello-software)
 ```
 
 首次配置优先运行顶层脚本：
@@ -173,16 +173,16 @@ sudo ldconfig
 
 #### 3.1 频率与 FPS 配置
 
-本项目中的“频率”分为 GELLO Dynamixel 读取频率、跟随控制/原始记录频率、PiPER-X CAN 反馈频率和 LeRobot 数据集 FPS。它们含义不同，不应将 `ag status` 的 `receive_fps`、raw manifest 的 `control_hz` 和 LeRobot `info.json` 的 `fps` 当成同一个参数。
+本项目中的“频率”分为 GELLO Dynamixel 读取频率、跟随控制/原始记录频率、PiPER-X CAN 反馈频率和 LeRobot 数据集 FPS。它们含义不同，不应将 `agilex-sdk-python status` 的 `receive_fps`、raw manifest 的 `control_hz` 和 LeRobot `info.json` 的 `fps` 当成同一个参数。
 
 | 环节                   | 当前设置                                 | 代码位置                                                                                                         | 如何修改                                                                                    |
 | -------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| GELLO Dynamixel 后台读取 | 每轮读取前 `sleep(0.01)`，理论上限低于 100 Hz    | `gello-software/src/gello/dynamixel/driver.py` 的 `_read_joint_states()`                                          | 修改 `time.sleep(0.01)`；但实际频率还受 FTDI、Dynamixel 串口通信时间和七个舵机返回时间限制                          |
-| 普通 GELLO 跟随          | 默认 50 Hz                             | `gello-software/src/gello/commands/follow.py` 的 `--hz`                                                      | 运行 `./start_gello_follow.sh --hz 目标值`                                                   |
-| 带记录的 GELLO 跟随        | 默认 50 Hz                             | `gello-software/src/gello/commands/follow_record.py` 的 `--hz`                                               | 运行 `./start_data_record.sh --hz 目标值`                                                    |
-| 跟随循环限速器              | 由上述 `--hz` 传入                        | `gello-software/src/gello/env.py` 的 `RobotEnv(..., control_rate_hz=...)` 和 `Rate.sleep()`                        | 通常不直接修改 `RobotEnv` 的 100 Hz 通用默认值，因为 PiPER-X 两个客户端已显式传入 `args.hz`                       |
-| AgileX JS 命令上限       | 默认 50 Hz                             | `agilexrobotics/src/agilexrobotics/gello_server.py` 的 `--hz` 和 `gello_follower.py` 的 `_wait_for_command_slot()` | 两个总 Shell 会将同一个 `--hz` 传给 AgileX 服务端，限制 `move_js` 的最高下发频率                             |
-| PiPER-X CAN 反馈       | 由机械臂固件和 pyAgxArm SDK 的 CAN 广播/接收线程决定 | `agilexrobotics/src/agilexrobotics/driver.py` 的 `get_receive_fps()` 仅返回 `self._arm.get_fps()`                | 当前封装没有修改 CAN 反馈 FPS 的接口；`uv run ag fps` 或 `uv run ag status` 只用于观测，不会设置频率               |
+| GELLO Dynamixel 后台读取 | 每轮读取前 `sleep(0.01)`，理论上限低于 100 Hz    | `agilex-gello-software/src/agilex_gello_software/dynamixel/driver.py` 的 `_read_joint_states()`                                          | 修改 `time.sleep(0.01)`；但实际频率还受 FTDI、Dynamixel 串口通信时间和七个舵机返回时间限制                          |
+| 普通 GELLO 跟随          | 默认 50 Hz                             | `agilex-gello-software/src/agilex_gello_software/commands/follow.py` 的 `--hz`                                                      | 运行 `./start_gello_follow.sh --hz 目标值`                                                   |
+| 带记录的 GELLO 跟随        | 默认 50 Hz                             | `agilex-gello-software/src/agilex_gello_software/commands/follow_record.py` 的 `--hz`                                               | 运行 `./start_data_record.sh --hz 目标值`                                                    |
+| 跟随循环限速器              | 由上述 `--hz` 传入                        | `agilex-gello-software/src/agilex_gello_software/env.py` 的 `RobotEnv(..., control_rate_hz=...)` 和 `Rate.sleep()`                        | 通常不直接修改 `RobotEnv` 的 100 Hz 通用默认值，因为 PiPER-X 两个客户端已显式传入 `args.hz`                       |
+| AgileX JS 命令上限       | 默认 50 Hz                             | `agilex-sdk-python/src/agilex_sdk_python/gello_server.py` 的 `--hz` 和 `gello_follower.py` 的 `_wait_for_command_slot()` | 两个总 Shell 会将同一个 `--hz` 传给 AgileX 服务端，限制 `move_js` 的最高下发频率                             |
+| PiPER-X CAN 反馈       | 由机械臂固件和 pyAgxArm SDK 的 CAN 广播/接收线程决定 | `agilex-sdk-python/src/agilex_sdk_python/driver.py` 的 `get_receive_fps()` 仅返回 `self._arm.get_fps()`                | 当前封装没有修改 CAN 反馈 FPS 的接口；`uv run agilex-sdk-python fps` 或 `uv run agilex-sdk-python status` 只用于观测，不会设置频率               |
 | LeRobot Dataset v3   | 默认 30 FPS                            | `start_data_record.sh` 的 `dataset_fps=30`，以及 `lerobot-converter` CLI 的 `--fps`                               | 自动转换使用 `./start_data_record.sh --dataset-fps 30`；手工转换使用 `lerobot-converter ... --fps 30` |
 
 普通跟随和记录跟随都通过总 Shell 的 `--hz` 显式设置控制频率。Shell 会将同一个值同时传给 GELLO 客户端和 AgileX 服务端，不需要再分别编辑两个子项目的默认值。raw manifest 的 `control_hz` 会由记录客户端自动写入，不要手工编辑 manifest。
@@ -228,7 +228,7 @@ control_period_ns
 原始数据第一版采用 JSON Lines。每行是一个完整样本，便于检查、恢复和离线处理：
 
 ```text
-robot/data/raw/
+agilex-controller/data/raw/
 └── session_YYYYMMDD_HHMMSS/
     ├── manifest.json
     └── episodes/
@@ -394,14 +394,14 @@ NaN/Inf 和维度错误数量
 手工转换适用于历史 raw session、更换目标 FPS，或者使用不同 feature 组合重新生成数据集。先初始化独立环境：
 
 ```bash
-cd /path/to/robot/lerobot-converter
+cd /path/to/agilex-controller/lerobot-converter
 uv sync --extra dataset
 ```
 
 然后转换一个已录制 session：
 
 ```bash
-cd /path/to/robot/lerobot-converter
+cd /path/to/agilex-controller/lerobot-converter
 uv run --extra dataset lerobot-converter \
   ../data/raw/session_YYYYMMDD_HHMMSS \
   ../data/lerobot/session_YYYYMMDD_HHMMSS \
@@ -445,7 +445,7 @@ python -m json.tool data/lerobot/session_YYYYMMDD_HHMMSS/meta/info.json
 当前已经完成并通过硬件联调的是：
 
 - PiPER-X CAN 驱动和状态读取。
-- `ag-gello-server` ZMQ 控制服务。
+- `agilex-sdk-python-server` ZMQ 控制服务。
 - GELLO 七维目标映射和 PiPER-X JS 实时跟随。
 - 启动校准、通信异常处理和 Ctrl+C 安全回零。
 
@@ -468,9 +468,9 @@ python -m json.tool data/lerobot/session_YYYYMMDD_HHMMSS/meta/info.json
 本工作区通过 GELLO 示教器控制 AgileX PiPER-X 机械臂，主要包含以下内容：
 
 ```text
-robot/
-├── agilexrobotics/          # PiPER-X CAN 通信、控制驱动和命令行工具
-├── gello-software/          # GELLO Dynamixel 读取和跟随客户端
+agilex-controller/
+├── agilex-sdk-python/          # PiPER-X CAN 通信、控制驱动和命令行工具
+├── agilex-gello-software/          # GELLO Dynamixel 读取和跟随客户端
 └── start_gello_follow.sh    # 自动检查、校准、跟随和安全退出脚本
 ```
 
@@ -490,8 +490,8 @@ software: S-V1.8-2
 普通 J 模式用于执行常规关节运动，例如：
 
 ```bash
-uv run ag zero
-uv run ag move_j ...
+uv run agilex-sdk-python zero
+uv run agilex-sdk-python move_j ...
 ```
 
 它适合单次目标位置控制。驱动发送目标后，等待机械臂到达目标，并根据关节误差和超时时间判断运动是否完成。普通命令默认采用较保守的速度限制。
@@ -543,14 +543,14 @@ mode_feedback = 1
 - 是否断开了 Python 或 CAN 连接。
 - 机械臂是否已经处于零位。
 
-这也是曾经出现“退出跟随后再次执行 `ag zero`，机械臂立即失能”的主要原因：机械臂控制器实际仍处于 JS 状态，新进程在执行普通 J 命令前进行了 JS 到 J 的转换。
+这也是曾经出现“退出跟随后再次执行 `agilex-sdk-python zero`，机械臂立即失能”的主要原因：机械臂控制器实际仍处于 JS 状态，新进程在执行普通 J 命令前进行了 JS 到 J 的转换。
 
 #### 2.2 当前采用的处理方式
 
 自动校准、实时跟随和退出回零统一保持在 JS 模式下完成：
 
 ```text
-启动 ag-gello-server
+启动 agilex-sdk-python-server
         ↓
 进入一次 JS 模式
         ↓
@@ -587,7 +587,7 @@ Ctrl+C 后通过同一 JS 通道回到 zero
 1. 配置 PiPER-X 的 CAN 接口。
 2. 检查 GELLO 串口和 PiPER-X CAN 通信。
 3. 读取 GELLO 当前 J1～J6 和 gripper。
-4. 启动 `ag-gello-server`，通过 JS 分步将 PiPER-X 移动到 zero。
+4. 启动 `agilex-sdk-python-server`，通过 JS 分步将 PiPER-X 移动到 zero。
 5. 按已确认的方向系数，通过同一 JS 会话对齐六轴和夹爪。
 6. 启动 GELLO 客户端并进入实时跟随。
 
@@ -607,7 +607,7 @@ J1  J2  J3  J4  J5  J6
 正常跟随过程中按下 Ctrl+C 后：
 
 1. 停止 GELLO 跟随客户端。
-2. 暂时保持 `ag-gello-server` 运行。
+2. 暂时保持 `agilex-sdk-python-server` 运行。
 3. 使用 `piper_x_movejs.py` 通过现有 JS 通道分步回零。
 4. 回零完成后关闭服务端。
 5. 释放 GELLO 串口和后台 Dynamixel 读取线程。
@@ -664,7 +664,7 @@ warning, comm failed: -3001
 恢复供电和线缆后，先执行只读命令：
 
 ```bash
-cd /path/to/robot/gello-software
+cd /path/to/agilex-controller/agilex-gello-software
 .venv/bin/python experiments/read_gello_joints.py \
   --gello-port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBM4Z46-if00-port0
 ```
@@ -676,13 +676,13 @@ cd /path/to/robot/gello-software
 以下两条通信链路彼此独立：
 
 ```text
-PiPER-X 机械臂 ←→ CAN 适配器 ←→ agilexrobotics
-GELLO 舵机     ←→ FTDI 串口   ←→ gello-software
+PiPER-X 机械臂 ←→ CAN 适配器 ←→ agilex-sdk-python
+GELLO 舵机     ←→ FTDI 串口   ←→ agilex-gello-software
 ```
 
 因此：
 
-- `ag status` 正常，只能证明 PiPER-X CAN 通信正常。
+- `agilex-sdk-python status` 正常，只能证明 PiPER-X CAN 通信正常。
 - GELLO 出现 `-3001` 时，PiPER-X CAN 仍可能完全正常。
 - CAN 为 `ERROR-ACTIVE` 且错误计数为零，不代表 GELLO 串口正常。
 - 排障时应分别验证两条链路，不要通过其中一条推断另一条。
@@ -716,7 +716,7 @@ cd /path/to/robot
 
 1. 配置并检查 PiPER-X CAN。
 2. 检查 GELLO 串口并读取当前七维状态。
-3. 启动 `ag-gello-server`，通过同一 JS 会话分步回零。
+3. 启动 `agilex-sdk-python-server`，通过同一 JS 会话分步回零。
 4. 将 PiPER-X 对齐到 GELLO 当前姿态。
 5. 启动独立的 `piper_x_follow_record.py` 客户端。
 6. 进入正常跟随状态，但默认不记录数据。
@@ -785,11 +785,11 @@ Ctrl+C：结束跟随并安全回零
 | `--gello-port`        | GELLO FTDI/Dynamixel 串口          | 当前 FTBM4Z46 by-id 路径          |
 | `--can-interface`     | PiPER-X CAN 接口                   | `can0`                        |
 | `--can-bitrate`       | CAN 波特率                          | `1000000`                     |
-| `--host`              | `ag-gello-server` 地址             | `127.0.0.1`                   |
-| `--port`              | `ag-gello-server` 端口             | `6001`                        |
+| `--host`              | `agilex-sdk-python-server` 地址             | `127.0.0.1`                   |
+| `--port`              | `agilex-sdk-python-server` 端口             | `6001`                        |
 | `--hz`                | GELLO 跟随、raw 采样和 PiPER-X JS 命令频率 | `50`                          |
-| `--raw-data-root`     | 原始 session 根目录                   | `robot/data/raw`           |
-| `--lerobot-data-root` | LeRobot Dataset v3 根目录           | `robot/data/lerobot`       |
+| `--raw-data-root`     | 原始 session 根目录                   | `agilex-controller/data/raw`           |
+| `--lerobot-data-root` | LeRobot Dataset v3 根目录           | `agilex-controller/data/lerobot`       |
 | `--dataset-fps`       | 离线数据集目标帧率                        | `30`                          |
 | `--skip-conversion`   | 安全退出后跳过离线转换                      | 关闭                            |
 | `--task`              | 当前 session 的任务描述                 | `PiPER-X GELLO teleoperation` |
@@ -821,7 +821,7 @@ Ctrl+C：结束跟随并安全回零
 默认输出结构：
 
 ```text
-robot/data/raw/
+agilex-controller/data/raw/
 └── session_YYYYMMDD_HHMMSS/
     ├── manifest.json
     └── episodes/
@@ -836,7 +836,7 @@ robot/data/raw/
 
 #### 1.7 Ctrl+C 和异常退出
 
-如果按 Ctrl+C 时存在活动 episode，记录客户端先停止接收新帧、排空后台队列并保留 `.partial`，随后外层 Shell 通过仍在运行的 `ag-gello-server` 执行 PiPER-X JS 安全回零。如果当前没有活动 episode，程序直接结束跟随并执行安全回零。
+如果按 Ctrl+C 时存在活动 episode，记录客户端先停止接收新帧、排空后台队列并保留 `.partial`，随后外层 Shell 通过仍在运行的 `agilex-sdk-python-server` 执行 PiPER-X JS 安全回零。如果当前没有活动 episode，程序直接结束跟随并执行安全回零。
 
 不要使用 `kill -9` 停止数据记录流程，因为它无法刷新后台队列、恢复终端按键模式或执行 PiPER-X 安全回零。
 
@@ -862,14 +862,14 @@ robot/data/raw/
 
 ```text
 start_gello_follow.sh --hz HZ
-    ├── ag-gello-server --hz HZ
+    ├── agilex-sdk-python-server --hz HZ
     │       └── GelloPiperXRobot(control_hz=HZ)
     │               └── _wait_for_command_slot() 限制 move_js 下发上限
     └── piper_x_follow.py --hz HZ
             └── RobotEnv(control_rate_hz=HZ)
 
 start_data_record.sh --hz HZ
-    ├── ag-gello-server --hz HZ
+    ├── agilex-sdk-python-server --hz HZ
     │       └── GelloPiperXRobot(control_hz=HZ)
     └── piper_x_follow_record.py --hz HZ
             ├── RobotEnv(control_rate_hz=HZ)
@@ -882,11 +882,11 @@ start_data_record.sh --hz HZ
 | ----------- | ----------------------------------------------------- | -------------------------------------------- | ------------------------------- |
 | 总入口         | `start_gello_follow.sh`                               | `hz="50"` 和 `--hz`                           | 普通跟随实验入口                        |
 | 总入口         | `start_data_record.sh`                                | `hz="50"` 和 `--hz`                           | 记录跟随实验入口                        |
-| GELLO 客户端   | `gello-software/src/gello/commands/follow.py`        | CLI `--hz`，默认 50.0                           | 将频率传给 `RobotEnv`                |
-| GELLO 记录客户端 | `gello-software/src/gello/commands/follow_record.py` | CLI `--hz`，默认 50.0                           | 将频率传给 `RobotEnv` 和 raw recorder |
-| GELLO 限速器   | `gello-software/src/gello/env.py`                         | `RobotEnv(control_rate_hz)` 和 `Rate.sleep()` | 保证整轮客户端循环不超过目标频率                |
-| AgileX 服务端  | `agilexrobotics/src/agilexrobotics/gello_server.py`   | CLI `--hz`，默认 50.0                           | 把目标频率传给 PiPER-X GELLO 适配器       |
-| AgileX 适配器  | `agilexrobotics/src/agilexrobotics/gello_follower.py` | `control_hz` 和 `_wait_for_command_slot()`    | 防止 `move_js` 实际下发频率超过设置值        |
+| GELLO 客户端   | `agilex-gello-software/src/agilex_gello_software/commands/follow.py`        | CLI `--hz`，默认 50.0                           | 将频率传给 `RobotEnv`                |
+| GELLO 记录客户端 | `agilex-gello-software/src/agilex_gello_software/commands/follow_record.py` | CLI `--hz`，默认 50.0                           | 将频率传给 `RobotEnv` 和 raw recorder |
+| GELLO 限速器   | `agilex-gello-software/src/agilex_gello_software/env.py`                         | `RobotEnv(control_rate_hz)` 和 `Rate.sleep()` | 保证整轮客户端循环不超过目标频率                |
+| AgileX 服务端  | `agilex-sdk-python/src/agilex_sdk_python/gello_server.py`   | CLI `--hz`，默认 50.0                           | 把目标频率传给 PiPER-X GELLO 适配器       |
+| AgileX 适配器  | `agilex-sdk-python/src/agilex_sdk_python/gello_follower.py` | `control_hz` 和 `_wait_for_command_slot()`    | 防止 `move_js` 实际下发频率超过设置值        |
 
 #### 2.3 建议实验步骤
 
@@ -914,9 +914,9 @@ start_data_record.sh --hz HZ
 
 #### 2.4 不由 `--hz` 修改的频率
 
-GELLO Dynamixel 后台线程在 `gello-software/src/gello/dynamixel/driver.py::_read_joint_states()` 中每轮读取前执行 `time.sleep(0.01)`。这是串口读取调度间隔，不会由总 Shell 的 `--hz` 自动修改。它的理论上限低于 100 Hz，实际还受 FTDI、Dynamixel SyncRead 和舵机返回时间限制。测试 100 Hz 或更高的跟随频率时，必须注意客户端可能多次使用同一帧 GELLO 缓存角度；除非已确认串口余量和通信稳定性，不建议同时缩短这个 `0.01 s` 间隔。
+GELLO Dynamixel 后台线程在 `agilex-gello-software/src/agilex_gello_software/dynamixel/driver.py::_read_joint_states()` 中每轮读取前执行 `time.sleep(0.01)`。这是串口读取调度间隔，不会由总 Shell 的 `--hz` 自动修改。它的理论上限低于 100 Hz，实际还受 FTDI、Dynamixel SyncRead 和舵机返回时间限制。测试 100 Hz 或更高的跟随频率时，必须注意客户端可能多次使用同一帧 GELLO 缓存角度；除非已确认串口余量和通信稳定性，不建议同时缩短这个 `0.01 s` 间隔。
 
-PiPER-X CAN `receive_fps` 由机械臂固件的 CAN 广播和 pyAgxArm 接收线程决定。`agilexrobotics/src/agilexrobotics/driver.py::get_receive_fps()` 只读取 SDK 统计值，`uv run ag fps` 和 `uv run ag status` 也只能观测。pyAgxArm `FPSManager` 中的 `0.1 s` 是统计窗口，修改它只会改变 FPS 数字的刷新方式，不会改变 CAN 真实反馈频率。CAN 波特率 `1000000 bit/s` 也不等于 FPS，不应在频率实验中改动。
+PiPER-X CAN `receive_fps` 由机械臂固件的 CAN 广播和 pyAgxArm 接收线程决定。`agilex-sdk-python/src/agilex_sdk_python/driver.py::get_receive_fps()` 只读取 SDK 统计值，`uv run agilex-sdk-python fps` 和 `uv run agilex-sdk-python status` 也只能观测。pyAgxArm `FPSManager` 中的 `0.1 s` 是统计窗口，修改它只会改变 FPS 数字的刷新方式，不会改变 CAN 真实反馈频率。CAN 波特率 `1000000 bit/s` 也不等于 FPS，不应在频率实验中改动。
 
 ## （4）Submodule 与开发环境调试
 
@@ -940,8 +940,8 @@ git submodule status
 `git status --short` 只会把 submodule 概括为一个路径。需要判断子项目内部是否有未提交修改时，分别执行：
 
 ```bash
-git -C agilexrobotics status --short
-git -C gello-software status --short
+git -C agilex-sdk-python status --short
+git -C agilex-gello-software status --short
 git -C lerobot-converter status --short
 ```
 
@@ -973,12 +973,12 @@ git submodule update --init
 从顶层逐项检查解释器和关键入口，不连接硬件：
 
 ```bash
-agilexrobotics/.venv/bin/python --version
-agilexrobotics/.venv/bin/ag --help
-agilexrobotics/.venv/bin/ag-gello-server --help
+agilex-sdk-python/.venv/bin/python --version
+agilex-sdk-python/.venv/bin/agilex-sdk-python --help
+agilex-sdk-python/.venv/bin/agilex-sdk-python-server --help
 
-gello-software/.venv/bin/python --version
-uv run --project gello-software --frozen gello read --help
+agilex-gello-software/.venv/bin/python --version
+uv run --project agilex-gello-software --frozen agilex-gello-software read --help
 
 lerobot-converter/.venv/bin/python --version
 lerobot-converter/.venv/bin/lerobot-converter --help
@@ -991,13 +991,13 @@ lerobot-converter/.venv/bin/lerobot-converter --help
 硬件联调前先完成不访问设备的测试：
 
 ```bash
-cd agilexrobotics
+cd agilex-sdk-python
 uv run pytest
 uv run ruff check .
 uv run pyright
 cd ..
 
-gello-software/.venv/bin/python -m pytest gello-software/tests
+agilex-gello-software/.venv/bin/python -m pytest agilex-gello-software/tests
 
 cd lerobot-converter
 uv run --group dev pytest
@@ -1014,9 +1014,9 @@ cd ..
 1. `git submodule status`：三个子项目版本完整。
 2. 三个 `.venv` 的 Python 和 `--help`：解释器与入口可用。
 3. `ls -l /dev/serial/by-id/`：GELLO 路径和权限正确。
-4. `uv run --project gello-software gello read`：只读 GELLO 稳定且没有持续 `-3001`。
+4. `uv run --project agilex-gello-software agilex-gello-software read`：只读 GELLO 稳定且没有持续 `-3001`。
 5. `config_can.sh` 与 `ip -details -statistics link show can0`：CAN 为 1 Mbit/s 且无异常错误计数。
-6. `uv run ag status --wait 1.0`：PiPER-X `communication_ok=true` 且 RX 增长。
+6. `uv run agilex-sdk-python status --wait 1.0`：PiPER-X `communication_ok=true` 且 RX 增长。
 7. `start_gello_follow.sh`：在清空工作空间并确认急停后测试跟随和 Ctrl+C 回零。
 8. `start_data_record.sh --skip-conversion`：先验证 raw 记录，再单独运行转换器。
 9. 完整 `start_data_record.sh`：最后验证记录、回零和 LeRobot 自动转换的组合流程。
