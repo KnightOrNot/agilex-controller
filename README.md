@@ -1,327 +1,137 @@
-# agilex-controller：PiPER-X 与 GELLO 数据采集系统
+# agilex-controller
 
-本项目用于完成 AgileX PiPER-X 机械臂控制、GELLO 遥操作示教、原始数据记录，以及 LeRobot Dataset v3 离线转换。顶层仓库负责组合三个相互独立的子项目和两个安全启动脚本；三个子项目通过 Git submodule 固定版本，各自维护独立的 Python 环境和依赖。
+PiPER-X 与 GELLO 的应用编排和数采入口。controller 创建客户端，管理设备检查、SDK 服务、JS 定位、跟随循环和原始 episode；`lerobot-converter` 在独立 Python 3.12 环境中完成时间对齐和 LeRobot Dataset v3 转换。当前采集七维关节、夹爪和末端状态。
 
-> [!WARNING]
-> 跟随和记录流程会控制真实机械臂。首次运行前必须固定机械臂底座、清空工作空间、确认急停按钮触手可及，并先完成 CAN 与 GELLO 的只读检查。PiPER-X 失能后可能因重力下坠，执行失能操作前必须托住机械臂。
+## 职责与目录
 
-## （1）项目架构
-
-```text
-agilex-controller/
-├── agilex-sdk-python/          # submodule：PiPER-X CAN 驱动与 ZMQ 控制服务
-├── agilex-gello-software/          # submodule：GELLO 读取、跟随与 raw 数据记录
-├── lerobot-converter/       # submodule：raw → LeRobot Dataset v3 离线转换
-├── data/
-│   ├── raw/                 # 不可变的原始 session
-│   └── lerobot/             # 可重新生成的 LeRobot 数据集
-├── docs/
-│   └── DEVELOPMENT.md       # 顶层联调与故障排查手册
-├── setup.sh                 # submodule、pyenv、uv 环境和系统依赖的一键配置
-├── start_gello_follow.sh    # 跟随、校准和安全退出入口
-├── start_data_record.sh     # 跟随、记录、安全退出和离线转换入口
-└── .gitmodules              # 三个子项目的仓库地址与挂载路径
-```
-
-三个 submodule 的职责边界：
-
-| 子项目                 | Python | 职责                                       |
-| ------------------- | ------ | ---------------------------------------- |
-| `agilex-sdk-python`    | 3.11   | 独占 PiPER-X CAN，读取反馈并提供 `agilex-sdk-python-server` |
-| `agilex-gello-software`    | 3.11   | 独占 GELLO 串口，生成跟随 action 并记录 raw session  |
-| `lerobot-converter` | 3.12   | 离线校验 raw session，生成 LeRobot Dataset v3   |
-
-完整运行链路：
+| 组件 | 职责 |
+| --- | --- |
+| controller，Python 3.11 | 应用配置、客户端组合、进程生命周期、跟随和 raw 录制 |
+| `agilex-gello-software/`，Python 3.11 | GELLO/Dynamixel 读取、设备校准、上游通用实验工具 |
+| `agilex-sdk-python/`，Python 3.11 | CAN 硬件、运动控制、反馈、ZMQ 服务；本次迁移未修改 SDK |
+| `lerobot-converter/`，Python 3.12 | raw 校验、时间戳重采样、LeRobot 数据集与质量报告 |
 
 ```text
-GELLO → agilex-gello-software → ZMQ → agilex-sdk-python → CAN → PiPER-X
-                 │
-                 └── data/raw/session_*
-                              │
-                              └── lerobot-converter → data/lerobot/session_*
+src/agilex_controller/     Python 应用和 CLI
+config/default.toml       项目默认值与本机主手校准
+scripts/setup.sh          一键配置
+scripts/start_gello_follow.sh  一键跟随 → controller follow
+scripts/start_data_record.sh   一键数采 → controller record
+tests/                    无硬件回归测试与转换集成测试
+docs/                     安装、架构、命令、配置和排障
+data/raw/                 原始 session，Git 忽略
+data/lerobot/             派生数据集，Git 忽略
 ```
 
-## （2）环境要求
+三个子项目以 Git submodule 固定版本。controller 只将 GELLO 基础包作为本地 editable 依赖安装；SDK 服务和转换器使用各自的解释器，通过 ZMQ 和文件协作。
 
-### 1. 操作系统与工具
+## 安装
 
-- Ubuntu 或其他支持 SocketCAN 和 USB 串口的 Linux 系统
-- Git 2.x，并支持 Git submodule
-- [pyenv](https://github.com/pyenv/pyenv)：安装和选择各子项目所需的 Python
-- [uv](https://docs.astral.sh/uv/getting-started/installation/)：创建 `.venv`、同步锁定依赖和运行命令
-- `iproute2`：提供 CAN 配置所需的 `ip`
-- `build-essential`：安装部分 GELLO Python 依赖
-- `curl`：安装 uv
-- `ffmpeg`：为 LeRobot/TorchCodec 后续视频处理提供系统共享库
-- `lsof`：排查 GELLO 串口占用
-
-`setup.sh` 默认自动安装这些系统包。需要手工安装时执行：
+在 Linux 上 clone 项目，然后运行：
 
 ```bash
-sudo apt update
-sudo apt install -y git curl build-essential iproute2 ffmpeg lsof \
-  libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
-  libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev \
-  libffi-dev liblzma-dev
-sudo ldconfig
+./scripts/setup.sh
 ```
 
-### 2. 硬件
+脚本初始化 submodule、准备 pyenv 和 uv、安装系统依赖并同步四个环境。开发中保留已有子模块修改时：
 
-- AgileX PiPER-X 与 AGX 夹爪
-- 兼容 SocketCAN 的 USB-CAN 适配器，默认接口名 `can0`
-- 正确连接的 CAN-H/CAN-L 和终端电阻，默认波特率 `1,000,000 bit/s`
-- 七自由度 GELLO 主手、稳定供电和 FTDI/Dynamixel 串口适配器
-- 当前账户可使用 `sudo` 配置 CAN，并具有 GELLO 串口读写权限
+```bash
+./scripts/setup.sh --skip-system --skip-submodules
+./scripts/setup.sh --check-only
+```
 
-### 3. Python 环境边界
+加入 `dialout` 后需要注销并重新登录。完整依赖与手工安装流程见[安装指南](docs/installation.md)。
 
-Python 解释器由 pyenv 管理，uv 只使用 pyenv 提供的解释器创建 `.venv` 并同步依赖。三个子项目必须保留各自的 `.venv`，不要在顶层创建一个环境混装全部依赖：
+## 配置与只读检查
+
+先检查 [config/default.toml](config/default.toml)。设备 ID、弧度 offset、设备方向和夹爪端点必须与当前 GELLO 标定一致；`follower_signs` 是额外的主手到从臂方向映射。
+
+```bash
+uv run agilex-controller --help
+uv run agilex-controller config
+uv run agilex-controller read
+uv run agilex-controller status
+```
+
+`read` 只打开主手串口；`status` 调用 SDK 的只读检查，要求 CAN 已配置。手工配置默认 CAN：
+
+```bash
+./agilex-sdk-python/scripts/config_can.sh
+```
+
+以下启动示例直接使用默认配置。需要自定义实验配置或覆盖参数时，参见[配置参考](docs/reference/config.md)。路径字段相对于项目根目录解析。
+
+## 跟随与采集
+
+以下命令会控制真实机械臂。运行前固定底座、清空工作区，确认急停可用，并完成上面的只读检查。默认启动流程在运动前显示目标，要求输入 `yes`。
+
+```bash
+./scripts/start_gello_follow.sh
+./scripts/start_data_record.sh
+```
+
+等价的 Python 应用入口：
+
+```bash
+uv run agilex-controller follow
+uv run agilex-controller record
+```
+
+两个脚本仅传递参数，完整流程由 controller 实现：
+
+1. 持有互斥锁，检查串口、配置 CAN、检查真实反馈并读取主手。
+2. 确认目标，启动独立进程中的 SDK 服务并等待 RPC 就绪。
+3. 通过同一 JS 服务分步回零、对齐，然后开始跟随。
+4. Ctrl+C 或 SIGTERM 停止新命令，释放客户端与主手，通过新客户端尝试 JS 回零，再关闭所启动的 SDK 服务。
+5. 刷新未完成 raw episode；数采命令随后离线转换已保存的数据。
+
+数采按键：
+
+| 按键 | 操作 |
+| --- | --- |
+| R | 开始一个 episode |
+| S | 保存当前 episode |
+| D | 丢弃当前 episode |
+| P / H | 状态 / 帮助 |
+| Ctrl+C | 退出；当前未保存 episode 保留为 `.partial` |
+
+必须先按 S 才会得到可转换的正式 episode。`--start-recording` 自动开始第一集，仍需按 S 保存。`--skip-conversion` 仅保留 raw；`--yes` 跳过运动确认。标准输入不是终端时，单键操作不可用。
+
+退出保持现有 SDK 的 JS 控制方式，不切换普通 J 模式、不额外 reset，也不自动失能。失能可能造成机械臂下坠；按硬件手册操作。回零失败会报告错误并继续关闭本程序启动的服务。
+
+## 数据与离线转换
 
 ```text
-agilex-sdk-python/.venv      Python 3.11：CAN、pyAgxArm、ZMQ
-agilex-gello-software/.venv      Python 3.11：Dynamixel、GELLO、实时记录
-lerobot-converter/.venv   Python 3.12：LeRobot、PyTorch、Parquet、转换
+data/raw/session_YYYYMMDD_HHMMSS/
+├── manifest.json
+└── episodes/
+    ├── episode_000000.jsonl
+    └── episode_000001.jsonl.partial
 ```
 
-顶层 Shell 会显式调用对应子项目中的解释器和 CLI，不依赖当前终端激活了哪个虚拟环境。
-
-## （3）快速开始
-
-### 1. Clone 顶层项目
-
-使用 SSH：
+raw 格式保持 `piper_x_gello_raw` v1。每行保存最终下发的 action、随后返回的 observation、单调时钟和墙钟时间；录制不会直接导入 LeRobot 或 PyTorch。原始数据是权威数据源，转换器只读它们。
 
 ```bash
-git clone git@github.com:KnightOrNot/agilex-controller.git
-cd agilex-controller
+uv run agilex-controller convert data/raw/SESSION data/lerobot/DATASET
 ```
 
-未配置 GitHub SSH 密钥时使用 HTTPS：
+将 `SESSION` 和 `DATASET` 替换为实际目录。转换器忽略 `.partial`，拒绝覆盖已存在的输出；成功后生成 `meta/`、`data/` 和 `quality_report.json`。同步算法和格式说明见[转换器文档](lerobot-converter/README.md)。
+
+## 文档与验证
+
+- [架构与数据流](docs/index.md)
+- [安装指南](docs/installation.md)
+- [CLI 参考](docs/reference/cli.md)
+- [配置参考](docs/reference/config.md)
+- [故障排查](docs/reference/errors.md)
+- [贡献指南](CONTRIBUTING.md)
+- [第三方代码声明](THIRD_PARTY_NOTICES.md)
 
 ```bash
-git clone https://github.com/KnightOrNot/agilex-controller.git
-cd agilex-controller
+uv run --frozen pytest
+uv run --frozen ruff check src tests
+uv run --frozen ruff format --check src tests
+uv build
 ```
 
-`setup.sh` 会按顶层锁定的 commit 初始化三个一级子项目，不要求 clone 时添加 `--recurse-submodules`。体积较大且正常 PiPER-X 开发不需要的 MuJoCo Menagerie 默认不会下载。
-
-### 2. 一键配置软件环境
-
-默认配置包含 Ubuntu 系统包、submodule、pyenv、uv、三个虚拟环境、LeRobot dataset 依赖、FFmpeg/TorchCodec 验证和 `dialout` 用户组：
-
-```bash
-./setup.sh
-```
-
-脚本不会配置 CAN、访问串口或移动机械臂，可以安全重复执行。若脚本将当前用户加入了 `dialout`，完成后必须注销并重新登录。常用选项：
-
-```bash
-./setup.sh --skip-system
-./setup.sh --gello-extra full
-./setup.sh --with-simulation-assets
-./setup.sh --check-only
-```
-
-- `--skip-system` 适用于系统包、pyenv 和 uv 已经安装且不希望使用 sudo 的机器；
-
-- `--gello-extra full` 额外安装相机、仿真和第三方机器人的 Python 依赖；
-
-- `--with-simulation-assets` 仅在确实运行 MuJoCo 仿真时下载 Menagerie 模型；
-
-- `--check-only` 不修改系统，只验证现有配置。默认 PiPER-X 跟随与记录只安装 GELLO 基础依赖。
-
-### 3. 手工配置等效流程
-
-不使用一键脚本时，先初始化 submodule：
-
-```bash
-git submodule sync
-git submodule update --init
-```
-
-只有仿真开发需要额外执行：
-
-```bash
-git -C agilex-gello-software submodule update \
-  --init third_party/mujoco_menagerie
-```
-
-然后读取各子项目的 `.python-version`，由 pyenv 安装解释器并显式交给 uv。当前版本的等效命令为：
-
-```bash
-pyenv install -s "$(pyenv latest -k 3.11)"
-pyenv install -s "$(pyenv latest -k 3.12)"
-
-python311="$(PYENV_VERSION="$(pyenv latest -k 3.11)" pyenv which python)"
-python312="$(PYENV_VERSION="$(pyenv latest -k 3.12)" pyenv which python)"
-
-UV_NO_MANAGED_PYTHON=1 uv sync --project agilex-sdk-python --frozen --python "$python311"
-UV_NO_MANAGED_PYTHON=1 uv sync --project agilex-gello-software --frozen --python "$python311"
-UV_NO_MANAGED_PYTHON=1 uv sync --project lerobot-converter --frozen --extra dataset --python "$python312"
-```
-
-这里的 `UV_NO_MANAGED_PYTHON=1` 防止 uv 自行下载另一套 Python。DynamixelSDK 已由 `agilex-gello-software/uv.lock` 管理，不再手工 clone。最后验证：
-
-```bash
-ffmpeg -version
-lerobot-converter/.venv/bin/python -c "from torchcodec.decoders import VideoDecoder; print('TorchCodec 加载正常')"
-```
-
-即使当前仅转换关节数据，也建议提前完成该验证，为后续视频 feature 做准备。
-
-### 4. 配置 GELLO 串口权限
-
-```bash
-sudo usermod -aG dialout "$USER"
-```
-
-执行后注销并重新登录，再连接 GELLO 并查看稳定设备路径：
-
-```bash
-ls -l /dev/serial/by-id/
-```
-
-默认启动脚本使用以下设备；如果你的路径不同，运行时必须通过 `--gello-port` 指定，并确保该路径已经在 `agilex-gello-software/src/agilex_gello_software/agents/gello_agent.py` 的 `PORT_CONFIG_MAP` 中正确配置：
-
-```text
-/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBM4Z46-if00-port0
-```
-
-### 5. 进行只读硬件验证
-
-连接 USB-CAN 和机械臂、给 PiPER-X 上电并释放急停，然后配置 CAN：
-
-```bash
-./agilex-sdk-python/scripts/config_can.sh can0 1000000 100
-```
-
-只读检查 PiPER-X：
-
-```bash
-cd agilex-sdk-python
-uv run agilex-sdk-python status --channel can0 --wait 1.0
-cd ..
-```
-
-正常通信时 `connected` 和 `communication_ok` 应为 `true`，并且 `ip -statistics link show can0` 中的 RX 应持续增加。
-
-只读检查 GELLO，将路径替换为当前设备的 `by-id` 路径：
-
-```bash
-uv run --project agilex-gello-software agilex-gello-software read \
-  --gello-port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBM4Z46-if00-port0
-```
-
-只有两个只读检查都能稳定通过后，才进入运动流程。
-
-### 6. 启动跟随或数据记录
-
-先查看顶层脚本参数：
-
-```bash
-./start_gello_follow.sh --help
-./start_data_record.sh --help
-```
-
-启动普通跟随：
-
-```bash
-./start_gello_follow.sh \
-  --gello-port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBM4Z46-if00-port0 \
-  --hz 50
-```
-
-启动跟随与数据记录，退出后自动转换为 30 FPS 的 LeRobot Dataset v3：
-
-```bash
-./start_data_record.sh \
-  --gello-port /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBM4Z46-if00-port0 \
-  --task "pick up the object" \
-  --hz 50 \
-  --dataset-fps 30
-```
-
-脚本涉及真实运动，执行前会要求人工确认。跟随时按 `Ctrl+C` 会先停止新命令，再尝试通过现有 JS 会话安全回零；不要使用 `kill -9` 跳过清理流程。
-
-## （4）Submodule 日常维护
-
-### 1. 拉取顶层仓库固定版本
-
-其他开发者获取顶层最新提交后执行：
-
-```bash
-git pull --ff-only
-git submodule sync
-git submodule update --init
-```
-
-这会把三个子项目切换到顶层仓库记录的 commit，不会自动把它们更新到远端分支最新提交。
-
-### 2. 更新某个子项目版本
-
-需要升级 submodule 时，应先在对应子项目仓库完成修改、测试、提交和推送，再回到顶层记录新的 commit。例如：
-
-```bash
-cd agilex-sdk-python
-git switch main
-git pull --ff-only
-cd ..
-git add agilex-sdk-python
-git commit -m "chore: update agilex-sdk-python submodule"
-```
-
-`agilex-gello-software` 和 `lerobot-converter` 使用相同流程。不要只在 submodule 中产生未提交改动后提交顶层 gitlink，否则其他开发者无法取得这些修改。
-
-### 3. 查看 submodule 状态
-
-```bash
-git submodule status
-git status --short
-git -C agilex-sdk-python status --short
-git -C agilex-gello-software status --short
-git -C lerobot-converter status --short
-```
-
-## （5）文档导航
-
-- [顶层开发与调试手册](docs/DEVELOPMENT.md)：完整联调顺序、频率实验、记录、转换与故障排查
-- [agilex-sdk-python README](agilex-sdk-python/README.md)：PiPER-X 环境和只读 CAN 验证
-- [agilex-sdk-python 开发手册](agilex-sdk-python/docs/DEVELOPMENT.md)：`agilex-sdk-python`、硬件命令和 GELLO 服务参数
-- [agilex-gello-software README](agilex-gello-software/README.md)：GELLO 环境、串口权限和只读检查
-- [agilex-gello-software 开发手册](agilex-gello-software/docs/DEVELOPMENT.md)：映射、跟随、记录与 Dynamixel 排错
-- [lerobot-converter README](lerobot-converter/README.md)：独立转换器的输入/输出格式和快速开始
-- [lerobot-converter 开发手册](lerobot-converter/docs/DEVELOPMENT.md)：raw schema、重采样、LeRobot v3 输出和质量报告
-
-## （6）常见初始化问题
-
-### 1. Submodule 目录为空
-
-```bash
-git submodule sync
-git submodule update --init
-```
-
-### 2. Submodule 显示 detached HEAD
-
-这是正常状态。顶层仓库通过 commit 固定子项目版本，而不是要求 submodule 始终跟随某个分支。只有准备在子项目中开发和提交时，才进入目录执行 `git switch main`。
-
-### 3. 找不到虚拟环境命令
-
-不要用另一个子项目的 Python 代替，也不要让 uv 自行下载解释器。使用一键脚本保留 submodule 和系统配置，仅按 `.python-version` 重新检查 pyenv 并同步三个环境：
-
-```bash
-./setup.sh --skip-system --skip-submodules
-```
-
-单独修复某个环境时，按照快速开始“手工配置等效流程”显式传递 pyenv 解释器。
-
-### 4. CAN 接口 UP 但没有反馈
-
-接口 `UP` 只代表本机 SocketCAN 配置完成，不代表机械臂正在发送数据。检查机械臂供电、急停、CAN 接线、终端电阻和波特率，并观察：
-
-```bash
-ip -details -statistics link show can0
-```
-
-详细排查见[顶层开发与调试手册](docs/DEVELOPMENT.md)。
+测试使用本地 ZMQ 假服务和模拟主手，不访问 CAN 或串口。转换集成测试使用真实 converter 环境生成并读回数据集；它不能替代真实设备联调。

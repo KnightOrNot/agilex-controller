@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-root_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+root_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 install_system=true
 update_submodules=true
 check_only=false
@@ -12,9 +12,9 @@ relogin_required=false
 
 usage() {
     cat <<'EOF'
-用法：./setup.sh [选项]
+用法：./scripts/setup.sh [选项]
 
-初始化 agilex-controller 的 submodule、pyenv Python、三个 uv 环境和系统依赖。
+初始化 agilex-controller 的 submodule、pyenv Python、controller 与三个子项目的 uv 环境和系统依赖。
 脚本不会配置 CAN、访问串口或向机械臂发送命令，可安全重复执行。
 
 选项：
@@ -79,7 +79,7 @@ case "$gello_extra" in
 esac
 
 cd "$root_dir"
-[[ -f .gitmodules ]] || fail "请从 agilex-controller 仓库根目录运行本脚本"
+[[ -f .gitmodules ]] || fail "找不到 agilex-controller 仓库根目录"
 
 if [[ "$install_system" == true ]]; then
     log "[1/7] 安装 Ubuntu 系统依赖"
@@ -196,6 +196,7 @@ else
     sync_project agilex-gello-software
 fi
 sync_project lerobot-converter --extra dataset
+sync_project .
 
 log "[6/7] 创建数据目录并验证软件入口"
 if [[ "$check_only" != true ]]; then
@@ -203,6 +204,8 @@ if [[ "$check_only" != true ]]; then
 fi
 [[ -d data/raw && -d data/lerobot ]] || fail "data/raw 或 data/lerobot 不存在"
 
+.venv/bin/python -m agilex_controller --help >/dev/null
+.venv/bin/python -c "from agilex_gello_software.agents.gello_agent import GelloAgent; from agilex_controller.configuration import load_config; load_config()"
 agilex-sdk-python/.venv/bin/agilex-sdk-python --help >/dev/null
 agilex-sdk-python/.venv/bin/agilex-sdk-python-server --help >/dev/null
 agilex-gello-software/.venv/bin/agilex-gello-software --help >/dev/null

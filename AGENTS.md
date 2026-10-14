@@ -1,37 +1,34 @@
 # Repository Guidelines
 
-## Project Structure & Architecture
+## Project Structure & Responsibilities
 
-- `src/agilex_controller/` contains the Python 3.11 controller scaffold. Existing launch scripts still delegate following and raw recording to GELLO.
-- `agilex-sdk-python/`, `agilex-gello-software/`, and `lerobot-converter/` are independent Git submodules, each with `src/`, `tests/`, and its own environment.
-- `docs/` contains integration instructions, the user manual, and CAN protocol references. GELLO configurations and simulation assets belong to its submodule.
-- `data/raw/` holds immutable recordings; `data/lerobot/` holds regenerated datasets. Keep both out of Git.
+- `src/agilex_controller/` owns configuration, client composition, SDK subprocess lifecycle, JS positioning, following, and raw recording.
+- `config/default.toml` contains application defaults and installation-specific GELLO calibration. Pass calibration through `DynamixelRobotConfig`; do not patch the library's port map for this installation.
+- `agilex-gello-software/`, `agilex-sdk-python/`, and `lerobot-converter/` are independent Git submodules. Keep hardware access in SDK and timestamp alignment/conversion in converter.
+- `scripts/` contains exactly three Shell entry points: setup and two thin controller wrappers.
+- `tests/` covers controller behavior; `docs/` contains architecture, installation, CLI, configuration, and troubleshooting. Preserve hardware reference assets.
+- `data/raw/` is immutable input; `data/lerobot/` is regenerated output. Neither belongs in Git.
 
-For the planned refactor, place client composition, lifecycle management, and recording coordination in controller. Keep GELLO input/mapping and robot hardware access in their respective libraries; timestamp alignment and conversion belong to converter. Camera integration is deferred.
+Camera integration is deferred. The SDK remains unchanged for this refactor.
 
 ## Build, Test, and Development Commands
 
-Run from the repository root unless specified:
+Use Python 3.11 for controller/GELLO/SDK development and 3.12 for converter. Controller installs GELLO as a local editable dependency; SDK and converter use their own interpreters.
 
-- `./setup.sh`: initialize submodules and install system dependencies and Python environments.
-- `./setup.sh --check-only`: inspect the existing setup without installation.
-- `uv build`: build the controller package.
-- `uv run agilex-controller`: run the current scaffold entry point.
-- `./start_gello_follow.sh --help` and `./start_data_record.sh --help`: inspect operational arguments.
-- `bash -n setup.sh start_gello_follow.sh start_data_record.sh`: validate shell syntax.
+- `./scripts/setup.sh --skip-system --skip-submodules`: synchronize environments while preserving local submodule work.
+- `./scripts/setup.sh --check-only`: inspect installation without hardware access.
+- `uv run --frozen agilex-controller --help`: inspect commands.
+- `uv run --frozen pytest`: run hardware-free regressions and the real converter round trip when its environment exists.
+- `uv run --frozen ruff check src tests` and `uv run --frozen ruff format --check src tests`: validate controller style.
+- `uv build`: build distributions.
+- `bash -n scripts/*.sh`: validate shell syntax.
 
-Inside each changed submodule, run `uv run --group dev pytest` and `uv run --group dev ruff check .`. Also run `uv run pyright` inside `agilex-sdk-python/`.
+## Coding & Testing Guidelines
 
-Use Python 3.11 for controller/GELLO/SDK development and 3.12 for converter. Invoke converter through its own environment.
+Use four-space indentation, annotated public interfaces, snake_case functions/modules, and PascalCase classes. Test files use `test_*.py`; no coverage threshold is configured. Mock hardware, but exercise real local ZMQ and raw compatibility. Test errors, interruption, initialization failures, and cleanup order. Real hardware verification requires the documented setup and operator confirmation.
 
-## Coding Style & Naming Conventions
+Preserve upstream style in GELLO; avoid unrelated formatting. Run its pytest and existing CI lint from its directory.
 
-Use four-space Python indentation, type annotations for public interfaces, `snake_case` functions/modules, and `PascalCase` classes. Follow local Ruff configuration; GELLO uses an 88-character limit. Quote shell paths and derive repository paths from script locations rather than machine-specific directories.
+## Commits & Pull Requests
 
-## Testing Guidelines
-
-Use pytest with `test_*.py` files and `test_*` functions. Add controller tests under `tests/` as functionality develops. No repository-wide coverage threshold is configured. Mock CAN, serial, and ZMQ dependencies; test recording boundaries, interruption handling, and conversion compatibility. Hardware validation is separate: launch scripts move real machinery and require the documented setup and operator confirmation.
-
-## Commit & Pull Request Guidelines
-
-History mixes descriptive messages with `chore:` and `refactor:` prefixes; prefer concise, imperative, scoped descriptions. Commit and publish submodule changes before updating parent gitlinks. PRs should explain behavior changes, affected repositories, validation results, hardware-testing status, and relevant issues. Update usage documentation when commands or architecture change.
+Prefer concise imperative messages with conventional prefixes. Independent GELLO and submodule checkouts do not synchronize automatically. Publish tested submodule commits before updating parent gitlinks. PRs should state behavior, affected repositories, checks, hardware-validation status, and relevant issues. Update usage/configuration documentation alongside behavior changes.

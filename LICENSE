@@ -1,0 +1,8 @@
+Project-wide license status
+
+No project-wide license has been selected for newly authored agilex-controller
+code. This file does not grant additional rights to that code.
+
+Third-party portions retain their original licenses. The GELLO-derived material
+is covered by the MIT notice reproduced in THIRD_PARTY_NOTICES.md. Each Git
+submodule carries its own license and remains a separate project.

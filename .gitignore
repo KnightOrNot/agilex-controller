@@ -1,5 +1,12 @@
-# all folders
-*/.venv/*
+# Environments, builds, and development caches
+.venv/
+**/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+dist/
+*.egg-info/
 
 # data files
-data/
+/data/

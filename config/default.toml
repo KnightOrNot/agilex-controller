@@ -1,0 +1,36 @@
+[robot]
+host = "127.0.0.1"
+port = 6001
+hz = 50.0
+can_interface = "can0"
+can_bitrate = 1000000
+
+[gello]
+port = "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBM4Z46-if00-port0"
+joint_ids = [1, 2, 3, 4, 5, 6]
+# Radians: hardware encoder offsets, before the follower direction mapping.
+joint_offsets = [3.141592653589793, 3.141592653589793, 3.141592653589793, 3.141592653589793, 3.141592653589793, 3.141592653589793]
+joint_signs = [1, -1, -1, -1, 1, 1]
+gripper_config = [7, 159, 201]
+follower_signs = [1, 1, -1, -1, 1, 1]
+
+[recording]
+task = "PiPER-X GELLO teleoperation"
+queue_size = 500
+dataset_fps = 30
+convert = true
+start_recording = false
+
+[safety]
+max_start_error_rad = 0.35
+transition_step_rad = 0.02
+max_command_step_rad = 1.0
+request_timeout_s = 2.0
+startup_timeout_s = 15.0
+
+[paths]
+# Relative paths resolve against the repository root, not the shell's cwd.
+sdk_project = "agilex-sdk-python"
+converter_project = "lerobot-converter"
+raw_data_root = "data/raw"
+lerobot_data_root = "data/lerobot"
