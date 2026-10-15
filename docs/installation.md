@@ -14,7 +14,7 @@ cd agilex-controller
 ./scripts/setup.sh
 ```
 
-setup 从脚本位置找到仓库，初始化三个一级 submodule，通过 pyenv 选择各自 Python，再用 uv 的锁文件同步环境。它会安装 Ubuntu 系统包、按需安装 pyenv/uv，并检查 dialout。配置过程不访问 CAN/串口，不发送运动命令。
+setup 从脚本位置找到仓库，初始化三个一级 submodule 以及 GELLO 内必需的 DynamixelSDK，通过 pyenv 选择各自 Python，再用 uv 的锁文件同步环境。它会安装 Ubuntu 系统包、按需安装 pyenv/uv，并检查 dialout。配置过程不访问 CAN/串口，不发送运动命令。
 
 常用参数：
 
@@ -34,6 +34,7 @@ setup 从脚本位置找到仓库，初始化三个一级 submodule，通过 pye
 
 ```bash
 git submodule update --init
+git -C agilex-gello-software submodule update --init third_party/DynamixelSDK
 pyenv install -s "$(pyenv latest -k 3.11)"
 pyenv install -s "$(pyenv latest -k 3.12)"
 python311="$(PYENV_VERSION="$(pyenv latest -k 3.11)" pyenv which python)"
@@ -47,6 +48,8 @@ mkdir -p data/raw data/lerobot
 ```
 
 GELLO 包通过根目录 `tool.uv.sources` 中的本地 editable 路径安装。controller 与 GELLO 独立 CLI 各自安装相同代码的基础依赖，这是两个独立环境；无需将多个虚拟环境加入 PYTHONPATH。
+
+GELLO 的原生 `gello` 与本地适配由同一个分发包提供，DynamixelSDK 使用其固定 checkout 的 Python 源（3.7.51），不再从 PyPI 安装 4.0.5。开发期间使用 `--skip-submodules` 保留本地改动，前提是嵌套 SDK 已初始化。
 
 ## 安装验证
 

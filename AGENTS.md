@@ -5,6 +5,7 @@
 - `src/agilex_controller/` owns configuration, client composition, SDK subprocess lifecycle, JS positioning, following, and raw recording.
 - `config/default.toml` contains application defaults and installation-specific GELLO calibration. Pass calibration through `DynamixelRobotConfig`; do not patch the library's port map for this installation.
 - `agilex-gello-software/`, `agilex-sdk-python/`, and `lerobot-converter/` are independent Git submodules. Keep hardware access in SDK and timestamp alignment/conversion in converter.
+- GELLO preserves upstream `gello/`, tools, and configs; local adaptations belong in its `src/`. Its pinned DynamixelSDK submodule is a required uv source. Run its offline upstream audit after changes.
 - `scripts/` contains exactly three Shell entry points: setup and two thin controller wrappers.
 - `tests/` covers controller behavior; `docs/` contains architecture, installation, CLI, configuration, and troubleshooting. Preserve hardware reference assets.
 - `data/raw/` is immutable input; `data/lerobot/` is regenerated output. Neither belongs in Git.

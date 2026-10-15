@@ -60,13 +60,16 @@ uv run --frozen pytest -m "not integration"
 
 没有全仓覆盖率门槛。为行为变化增加针对性测试，尤其是异常、取消和数据兼容；避免只复述实现的测试。
 
-修改 GELLO 后，在其目录执行 `uv run --frozen pytest`。保留上游文件原有风格；其 CI 的基础 lint 为：
+修改 GELLO 后，在其目录执行 `uv run --frozen pytest`。本地适配仅修改 `src/`，原生 `gello/`、脚本和配置由哈希清单约束，检查方式为：
 
 ```bash
-uv run ruff check src tests experiments scripts --select E9,F63,F7,F82
+uv run --frozen ruff check src tests
+uv run --frozen ruff format --check src tests
+uv run --frozen ruff check gello experiments scripts --select E9,F63,F7,F82
+uv run --frozen python -m agilex_gello_software.upstream
 ```
 
-只对确实改动的上游文件进行必要调整，不要混入全库格式化。SDK 本次保持原样；如后续单独修改，使用其 README 中的检查流程。
+不要格式化原始上游文件；必要行为适配写入本地 src。GELLO 与 controller 环境都通过 uv 安装固定的 `third_party/DynamixelSDK/python`；依赖变化同步更新两份 uv.lock。SDK 服务项目本次保持原样；如后续单独修改，使用其 README 中的检查流程。
 
 ## Submodule 与多仓库工作流
 

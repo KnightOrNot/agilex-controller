@@ -22,7 +22,7 @@ flowchart LR
 
 controller 的 `RobotClient` 是现有 SDK wire protocol 的应用侧适配器。本次未修改 SDK；协议仍为 ZMQ REQ/REP 和 pickle 的 `method/args` 请求。服务默认监听本机，部署时保持在可信网络范围内。
 
-GELLO 的 `GelloAgent.act()`、`DynamixelRobotConfig` 和机器人抽象继续沿用上游接口。设备校准显式传入，PiPER-X 专用的方向映射、客户端与录制已迁出主手库。
+GELLO 的原始实现位于 `gello/`；controller 导入兼容的 `agilex_gello_software` src 适配，其 `GelloAgent.act()`、校准映射和滤波复用上游，实现显式 close 与真实读取保护。设备校准显式传入，PiPER-X 专用的方向映射、客户端与录制留在 controller。
 
 ## 生命周期
 

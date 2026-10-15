@@ -25,6 +25,8 @@ data/lerobot/             派生数据集，Git 忽略
 
 三个子项目以 Git submodule 固定版本。controller 只将 GELLO 基础包作为本地 editable 依赖安装；SDK 服务和转换器使用各自的解释器，通过 ZMQ 和文件协作。
 
+GELLO 的原生 `gello/` 与本地 `src/` 适配分开维护。controller 继续使用 `agilex_gello_software` 的校准/生命周期 API；DynamixelSDK 改由 GELLO 内固定的嵌套 submodule 提供，安装脚本会初始化它。详情见 [GELLO 开发文档](agilex-gello-software/README.md)。
+
 ## 安装
 
 在 Linux 上 clone 项目，然后运行：

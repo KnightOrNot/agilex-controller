@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- GELLO 恢复原始上游目录，将本地 API/生命周期适配留在 src；安装流程初始化固定 DynamixelSDK，两个 uv.lock 同步依赖来源，保留现有 controller 调用与 raw 格式。
 - 统一三个 submodule 的 README、贡献/agent 指南、版本记录和 docs 结构，更新独立使用与 controller 联调说明；保留已有许可并记录未选定许可的项目状态。
 - 将 PiPER-X/GELLO 的客户端组合、设备预检、JS 对齐、跟随、原始录制和退出流程迁入 Python 3.11 controller。
 - 增加 `uv run agilex-controller` 的 config、read、status、follow、record、movejs、convert 命令及 follow-record 别名。

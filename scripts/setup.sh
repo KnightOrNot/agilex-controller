@@ -145,8 +145,9 @@ if [[ "$update_submodules" == true ]]; then
     done < <(git config --file .gitmodules --get-regexp path | awk '{print $2}')
     git submodule sync
     git submodule update --init
+    git -C agilex-gello-software submodule sync
+    git -C agilex-gello-software submodule update --init third_party/DynamixelSDK
     if [[ "$install_simulation_assets" == true ]]; then
-        git -C agilex-gello-software submodule sync
         git -C agilex-gello-software submodule update \
             --init third_party/mujoco_menagerie
     fi
@@ -158,6 +159,9 @@ for submodule_path in agilex-sdk-python agilex-gello-software lerobot-converter;
     [[ -f "$submodule_path/pyproject.toml" ]] \
         || fail "$submodule_path 尚未初始化；请取消 --skip-submodules"
 done
+
+[[ -f agilex-gello-software/third_party/DynamixelSDK/python/setup.py ]] \
+    || fail "GELLO 的 DynamixelSDK 尚未初始化；请初始化该嵌套 submodule 后重试"
 
 sync_project() {
     local project_dir="$1"
@@ -206,6 +210,7 @@ fi
 
 .venv/bin/python -m agilex_controller --help >/dev/null
 .venv/bin/python -c "from agilex_gello_software.agents.gello_agent import GelloAgent; from agilex_controller.configuration import load_config; load_config()"
+.venv/bin/python -c "from gello.agents.gello_agent import GelloAgent; import dynamixel_sdk"
 agilex-sdk-python/.venv/bin/agilex-sdk-python --help >/dev/null
 agilex-sdk-python/.venv/bin/agilex-sdk-python-server --help >/dev/null
 agilex-gello-software/.venv/bin/agilex-gello-software --help >/dev/null
