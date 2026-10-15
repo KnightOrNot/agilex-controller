@@ -41,7 +41,11 @@ class RobotEnv:
 
 
 def align_to_leader(
-    env: RobotEnv, leader: GelloLeader, config: ControllerConfig
+    env: RobotEnv,
+    leader: GelloLeader,
+    config: ControllerConfig,
+    *,
+    check_health: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     observations = env.get_obs()
     current = observations["joint_positions"]
@@ -58,6 +62,8 @@ def align_to_leader(
         1, int(np.ceil(float(np.max(errors)) / config.safety.transition_step_rad))
     )
     for arm in np.linspace(current[:6], target[:6], steps + 1)[1:]:
+        if check_health is not None:
+            check_health()
         observations = env.step(np.concatenate((arm, target[6:7])))
     return observations
 
@@ -158,9 +164,17 @@ def run_loop(
     recorder: RawEpisodeRecorder | None = None,
     *,
     defer_interrupts: Callable[[], AbstractContextManager[None]] = nullcontext,
+    camera: Any = None,
 ) -> None:
     env = RobotEnv(robot, config.robot.hz)
-    observations = align_to_leader(env, leader, config)
+    if camera is not None:
+        camera.check_health()
+    observations = align_to_leader(
+        env,
+        leader,
+        config,
+        **({"check_health": camera.check_health} if camera is not None else {}),
+    )
     if recorder is not None and config.recording.start_recording:
         with defer_interrupts():
             recorder.start_episode()
@@ -168,6 +182,8 @@ def run_loop(
     previous: int | None = None
     with RecordingKeyboard() if recorder is not None else nullcontext() as keyboard:
         while True:
+            if camera is not None:
+                camera.check_health()
             if recorder is not None:
                 key = keyboard.poll()
                 # Do not interrupt Thread.start between allocation and launch.
@@ -209,8 +225,11 @@ def move_js(
     step_rad: float = 0.02,
     period: float = 0.02,
     tolerance_deg: float = 1.0,
+    check_health: Callable[[], None] | None = None,
 ) -> None:
     """Small-step JS positioning and feedback verification, without mode resets."""
+    if check_health is not None:
+        check_health()
     current = robot.get_joint_state()
     gripper = float(current[6]) if gripper is None else gripper
     if target.shape != (6,) or not np.all(np.isfinite(target)):
@@ -220,12 +239,16 @@ def move_js(
     delta = target - current[:6]
     steps = max(1, int(np.ceil(float(np.max(np.abs(delta))) / step_rad)))
     for fraction in np.linspace(0, 1, steps + 1)[1:]:
+        if check_health is not None:
+            check_health()
         command = np.concatenate((current[:6] + delta * fraction, [gripper]))
         robot.command_joint_state(command)
         time.sleep(period)
     final_command = np.concatenate((target, [gripper]))
     deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
+        if check_health is not None:
+            check_health()
         robot.command_joint_state(final_command)
         time.sleep(period)
         final = robot.get_joint_state()

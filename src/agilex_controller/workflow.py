@@ -269,6 +269,7 @@ def _shutdown(
     server: SDKServer | None,
     ready: bool,
     recorder: RawEpisodeRecorder | None,
+    camera: Any = None,
 ) -> list[str]:
     errors: list[str] = []
 
@@ -301,6 +302,8 @@ def _shutdown(
         attempt("安全回零", zero)
     if server is not None:
         attempt("关闭 SDK 服务", server.close)
+    if camera is not None:
+        attempt("关闭相机并刷新图像", camera.close)
     # Hardware cleanup precedes potentially slow disk flushing and conversion.
     if recorder is not None:
 
@@ -347,9 +350,17 @@ def run_workflow(
         robot: RobotClient | None = None
         leader: GelloLeader | None = None
         recorder: RawEpisodeRecorder | None = None
+        camera: Any = None
         ready = False
         failure: Exception | None = None
         try:
+            if config.camera.enabled:
+                from .camera import CameraSession
+
+                print("相机初始化与预热中；就绪后再执行 JS 回零。")
+                with interrupts.defer():
+                    camera = CameraSession(config.camera)
+                print("相机已就绪。")
             if not existing_server:
                 with interrupts.defer():
                     server = SDKServer(config)
@@ -366,6 +377,7 @@ def run_workflow(
                 np.zeros(6),
                 step_rad=config.safety.transition_step_rad,
                 period=1 / config.robot.hz,
+                **({"check_health": camera.check_health} if camera is not None else {}),
             )
             move_js(
                 robot,
@@ -373,6 +385,7 @@ def run_workflow(
                 gripper=float(initial[6]),
                 step_rad=config.safety.transition_step_rad,
                 period=1 / config.robot.hz,
+                **({"check_health": camera.check_health} if camera is not None else {}),
             )
             with interrupts.defer():
                 leader = GelloLeader(config.gello, np.concatenate((initial[:6], [0.0])))
@@ -384,11 +397,19 @@ def run_workflow(
                         joint_signs=list(config.gello.follower_signs),
                         task=config.recording.task,
                         queue_size=config.recording.queue_size,
+                        **({"cameras": camera} if camera is not None else {}),
                     )
                 session = recorder.session_dir
                 print(f"原始数据 session: {session}")
                 print("R=开始 S=保存 D=丢弃 P=状态 H=帮助")
-            run_loop(robot, leader, config, recorder, defer_interrupts=interrupts.defer)
+            run_loop(
+                robot,
+                leader,
+                config,
+                recorder,
+                defer_interrupts=interrupts.defer,
+                **({"camera": camera} if camera is not None else {}),
+            )
         except KeyboardInterrupt:
             print("\n跟随已停止。")
         except Exception as exc:
@@ -396,7 +417,13 @@ def run_workflow(
         finally:
             with cleanup_signals():
                 cleanup_errors = _shutdown(
-                    config, robot, leader, server, ready, recorder
+                    config,
+                    robot,
+                    leader,
+                    server,
+                    ready,
+                    recorder,
+                    **({"camera": camera} if camera is not None else {}),
                 )
         if failure is not None:
             raise failure

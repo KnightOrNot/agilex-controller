@@ -1,4 +1,4 @@
-"""Application-owned asynchronous raw recorder; compatible with raw schema v1."""
+"""Application-owned asynchronous raw recorder; compatible with raw schema v1/v2."""
 
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ class RawEpisodeRecorder:
         task: str,
         queue_size: int = 500,
         session_time: datetime | None = None,
+        cameras: Any = None,
     ) -> None:
         if control_hz <= 0:
             raise ValueError("control_hz must be positive")
@@ -55,6 +56,7 @@ class RawEpisodeRecorder:
         self._writer_error: Exception | None = None
         self._partial_path: Path | None = None
         self._recording = False
+        self._cameras = cameras
 
         manifest = {
             "format": "piper_x_gello_raw",
@@ -92,6 +94,9 @@ class RawEpisodeRecorder:
                 "gripper_position",
             ],
         }
+        if cameras is not None:
+            manifest["format_version"] = 2
+            manifest["cameras"] = cameras.manifest
         self._write_json_atomic(self.session_dir / "manifest.json", manifest)
 
     @staticmethod
@@ -142,6 +147,8 @@ class RawEpisodeRecorder:
             daemon=False,
         )
         self._writer_thread.start()
+        if self._cameras is not None:
+            self._cameras.start_episode(self._partial_path)
         return self._partial_path
 
     def add_sample(self, sample: dict[str, Any]) -> None:
@@ -163,15 +170,21 @@ class RawEpisodeRecorder:
     def save_episode(self) -> Path:
         partial_path = self._finish_writer()
         if self._sequence == 0:
+            if self._cameras is not None:
+                self._cameras.discard_episode()
             partial_path.unlink(missing_ok=True)
             raise RecordingError("cannot save an empty episode")
         final_path = partial_path.with_suffix("")
+        if self._cameras is not None:
+            self._cameras.commit_episode()
         os.replace(partial_path, final_path)
         self._episode_index += 1
         return final_path
 
     def discard_episode(self) -> Path:
         partial_path = self._finish_writer()
+        if self._cameras is not None:
+            self._cameras.discard_episode()
         partial_path.unlink(missing_ok=True)
         return partial_path
 
@@ -203,6 +216,8 @@ class RawEpisodeRecorder:
                     continue
             self._writer_done.wait()
             writer_thread.join()
+        if self._cameras is not None:
+            self._cameras.finish_episode()
         self._recording = False
         self._sample_queue = None
         self._writer_thread = None

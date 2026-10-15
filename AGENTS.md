@@ -2,19 +2,19 @@
 
 ## Project Structure & Responsibilities
 
-- `src/agilex_controller/` owns configuration, client composition, SDK subprocess lifecycle, JS positioning, following, and raw recording.
+- `src/agilex_controller/` owns configuration, client composition, SDK subprocess lifecycle, JS positioning, following, and raw RGB-D recording.
 - `config/default.toml` contains application defaults and installation-specific GELLO calibration. Pass calibration through `DynamixelRobotConfig`; do not patch the library's port map for this installation.
-- `agilex-gello-software/`, `agilex-sdk-python/`, and `lerobot-converter/` are independent Git submodules. Keep hardware access in SDK and timestamp alignment/conversion in converter.
+- `agilex-gello-software/`, `agilex-sdk-python/`, `lerobot-converter/`, and `camera-realsense/` are independent Git submodules. Keep robot hardware access in SDK, camera acquisition in its library, and timestamp matching/conversion in converter.
 - GELLO preserves upstream `gello/`, tools, and configs; local adaptations belong in its `src/`. Its pinned DynamixelSDK submodule is a required uv source. Run its offline upstream audit after changes.
-- `scripts/` contains exactly three Shell entry points: setup and two thin controller wrappers.
+- `scripts/` contains five Shell entry points: setup and four thin controller wrappers for legacy/camera following and recording. New camera wrappers enable capture and preview; keep the legacy defaults camera-free.
 - `tests/` covers controller behavior; `docs/` contains architecture, installation, CLI, configuration, and troubleshooting. Preserve hardware reference assets.
 - `data/raw/` is immutable input; `data/lerobot/` is regenerated output. Neither belongs in Git.
 
-Camera integration is deferred. The SDK remains unchanged for this refactor.
+Camera owns reusable acquisition and SDK-to-host clock mapping; controller owns lifecycle and raw persistence; converter owns timestamp matching and LeRobot output. Preserve native Z16 depth and calibration. The robot SDK remains unchanged.
 
 ## Build, Test, and Development Commands
 
-Use Python 3.11 for controller/GELLO/SDK development and 3.12 for converter. Controller installs GELLO as a local editable dependency; SDK and converter use their own interpreters.
+Use Python 3.11 for controller/GELLO/SDK/camera development and 3.12 for converter. Controller installs GELLO and camera as local editable dependencies; SDK and converter use their own interpreters.
 
 - `./scripts/setup.sh --skip-system --skip-submodules`: synchronize environments while preserving local submodule work.
 - `./scripts/setup.sh --check-only`: inspect installation without hardware access.

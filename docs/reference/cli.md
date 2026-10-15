@@ -6,7 +6,7 @@
 uv run agilex-controller [--project-root PATH] [--config FILE] COMMAND [OPTIONS]
 ```
 
-公共选项也可以放在子命令后。`--project-root` 默认使用 editable 安装的源码根目录；使用 wheel 安装时应显式指定包含三个子项目的 checkout。`--config` 相对于当前工作目录解析，默认读取项目的 `config/default.toml`。所有命令支持 `--help`，帮助不会访问硬件。
+公共选项也可以放在子命令后。`--project-root` 默认使用 editable 安装的源码根目录；使用 wheel 安装时应显式指定包含四个子项目的 checkout。`--config` 相对于当前工作目录解析，默认读取项目的 `config/default.toml`。所有命令支持 `--help`，帮助不会访问硬件。
 
 ## 命令
 
@@ -39,6 +39,12 @@ uv run agilex-controller [--project-root PATH] [--config FILE] COMMAND [OPTIONS]
 | `--max-command-step-rad RAD` | `1.0`，最大允许 1.0 |
 | `--request-timeout-s SEC` | `2.0`，每次 RPC 超时 |
 | `--startup-timeout-s SEC` | `15.0`，服务就绪总等待时间 |
+| `--camera` / `--no-camera` | 启用/关闭相机，默认配置关闭；相机脚本启用 |
+| `--camera-depth` / `--no-camera-depth` | 启用/关闭原始深度，默认启用 |
+| `--camera-preview` / `--no-camera-preview` | RGB 预览，默认配置关闭；相机脚本启用 |
+| `--camera-serial SERIAL` | 指定设备序列号 |
+| `--camera-width N` / `--camera-height N` / `--camera-fps N` | 覆盖 RGB profile；深度 profile 在 TOML 中设置 |
+| `--camera-png-compress-level N` | 无损 PNG 压缩等级 0..9；默认取 TOML 的 0，最快但文件较大；影响 RGB 和深度 |
 | `--yes` | 跳过一次运动确认 |
 | `--skip-can-setup` | 使用已有 CAN 配置；仍检查 SDK 反馈 |
 | `--existing-server` | 连接手动管理的服务，跳过本地 CAN/SDK 预检及启停 |
@@ -78,12 +84,19 @@ uv run agilex-controller convert data/raw/SESSION data/lerobot/DATASET \
   --fps 30 --repo-id local/demo
 ```
 
-支持 `--converter-project`、`--fps`、`--repo-id`、`--without-velocity`、`--without-ee-pose`。session/output 相对于调用时工作目录解析；converter 项目路径相对于项目根目录解析。
+支持 `--converter-project`、`--fps`、`--repo-id`、`--without-velocity`、`--without-ee-pose`、`--max-camera-skew-ms`（正有限数，覆盖 manifest 每路最大匹配误差）。session/output 相对于调用时工作目录解析；converter 项目路径相对于项目根目录解析。
 
 controller 不导入 converter，使用其 `.venv/bin/python` 调用原 CLI，保留其返回码。转换不创建或控制硬件。目标目录必须尚不存在。
 
 ## Shell 入口与退出码
 
-`scripts/start_gello_follow.sh` 等价于 `follow`，`scripts/start_data_record.sh` 等价于 `record`；参数原样转交。两个脚本均使用项目锁文件和根目录环境，且能从任意工作目录调用。
+| 脚本 | 默认行为 |
+| --- | --- |
+| `scripts/start_gello_follow.sh` | `follow`，无相机 |
+| `scripts/start_data_record.sh` | `record`，无相机数采 |
+| `scripts/start_camera_follow.sh` | `follow --camera --camera-preview`，跟随并显示 RGB 图像 |
+| `scripts/start_camera_record.sh` | `record --camera --camera-preview`，跟随/预览并提供 RGB-D 数采 |
+
+原脚本保持原有调用形式，使用默认配置时不打开相机。相机脚本在用户参数前加入启用参数；用户仍可用 `--no-camera-preview` 或自定义 TOML 调整行为。所有运行脚本使用同一应用锁和根目录环境，可以从任意工作目录调用。record 均通过 R/S/D 管理 episode，未保存的活动集在退出时保持 partial。
 
 正常完成、人工取消、托管跟随经 Ctrl+C/SIGTERM 清理完成返回 0；应用或清理错误返回 1；参数语法错误返回 2。非托管操作被中断返回 130。转换子进程的失败码原样返回；发生控制/清理异常时自动转换不会执行，之后可手工转换已保存 raw。

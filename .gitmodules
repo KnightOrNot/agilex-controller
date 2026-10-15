@@ -7,3 +7,6 @@
 [submodule "lerobot-converter"]
 	path = lerobot-converter
 	url = git@github.com:KnightOrNot/lerobot-converter.git
+[submodule "camera-realsense"]
+	path = camera-realsense
+	url = git@github.com:KnightOrNot/camera-realsense.git

@@ -4,7 +4,7 @@
 
 使用支持 SocketCAN 的 Linux、PiPER-X/AGX 夹爪、USB-CAN 与 GELLO Dynamixel 主手。软件工具为 Git、pyenv、uv、iproute2、FFmpeg、编译工具和 lsof。系统包与转换依赖在 converter 环境中验证，不进入实时控制环境。
 
-controller/GELLO/SDK 的开发解释器是 Python 3.11；converter 是 3.12。根目录的 `requires-python` 当前限制为 `>=3.11,<3.12`，与 GELLO 包一致。
+controller/GELLO/SDK/camera 的开发解释器是 Python 3.11；converter 是 3.12。根目录的 `requires-python` 当前限制为 `>=3.11,<3.12`，与 GELLO 包一致。
 
 ## 一键配置
 
@@ -14,7 +14,7 @@ cd agilex-controller
 ./scripts/setup.sh
 ```
 
-setup 从脚本位置找到仓库，初始化三个一级 submodule 以及 GELLO 内必需的 DynamixelSDK，通过 pyenv 选择各自 Python，再用 uv 的锁文件同步环境。它会安装 Ubuntu 系统包、按需安装 pyenv/uv，并检查 dialout。配置过程不访问 CAN/串口，不发送运动命令。
+setup 从脚本位置找到仓库，初始化四个一级 submodule 以及 GELLO 内必需的 DynamixelSDK，通过 pyenv 选择各自 Python，再用 uv 的锁文件同步环境。它会安装 Ubuntu 系统包、按需安装 pyenv/uv，并检查 dialout。配置过程不访问 CAN/串口，不发送运动命令。
 
 常用参数：
 
@@ -26,7 +26,7 @@ setup 从脚本位置找到仓库，初始化三个一级 submodule 以及 GELLO
 | `--gello-extra NAME` | 仅为 GELLO 独立环境安装可选 camera/simulation/robots/full |
 | `--with-simulation-assets` | 显式下载 GELLO 的 MuJoCo Menagerie |
 
-控制与当前数值采集只需要 GELLO 基础依赖。默认安装不下载仿真模型。
+控制只需要 GELLO 基础依赖；RealSense 使用单独的 camera-realsense 库，不需要 GELLO 的 camera extra。默认安装不下载仿真模型。
 
 ## 手工同步
 
@@ -43,11 +43,12 @@ python312="$(PYENV_VERSION="$(pyenv latest -k 3.12)" pyenv which python)"
 UV_NO_MANAGED_PYTHON=1 uv sync --project agilex-sdk-python --frozen --python "$python311"
 UV_NO_MANAGED_PYTHON=1 uv sync --project agilex-gello-software --frozen --python "$python311"
 UV_NO_MANAGED_PYTHON=1 uv sync --project lerobot-converter --frozen --extra dataset --python "$python312"
+UV_NO_MANAGED_PYTHON=1 uv sync --project camera-realsense --frozen --python "$python311"
 UV_NO_MANAGED_PYTHON=1 uv sync --frozen --python "$python311"
 mkdir -p data/raw data/lerobot
 ```
 
-GELLO 包通过根目录 `tool.uv.sources` 中的本地 editable 路径安装。controller 与 GELLO 独立 CLI 各自安装相同代码的基础依赖，这是两个独立环境；无需将多个虚拟环境加入 PYTHONPATH。
+GELLO 和 camera-realsense 包通过根目录 `tool.uv.sources` 中的本地 editable 路径安装。controller 与 GELLO 独立 CLI 各自安装相同代码的基础依赖，这是两个独立环境；无需将多个虚拟环境加入 PYTHONPATH。
 
 GELLO 的原生 `gello` 与本地适配由同一个分发包提供，DynamixelSDK 使用其固定 checkout 的 Python 源（3.7.51），不再从 PyPI 安装 4.0.5。开发期间使用 `--skip-submodules` 保留本地改动，前提是嵌套 SDK 已初始化。
 
@@ -77,3 +78,13 @@ uv run agilex-controller status
 ```
 
 确认状态完整、CAN 收包正常后按 README 启动。安装路径改变时重新创建对应 `.venv`，不要修补旧 console-script shebang。
+
+## RealSense 首次接入
+
+查看[相机安装指南](../camera-realsense/docs/installation.md)配置 Linux udev 权限，重新插拔设备；setup 不会自动安装 udev 规则。推荐 USB 3 数据连接，避免与其他采集程序争用设备。
+
+```bash
+uv run --project camera-realsense camera-realsense info --profiles
+```
+
+根据实际 profile 设置 controller 的 `[camera]`，不要用相机库独立实验的 TOML 代替 controller 配置。首次联调按 README 先做只读检查，再启动跟随和短集采集；检查质量报告后再长时间采集。无图形桌面保持 `preview=false`。

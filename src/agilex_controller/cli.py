@@ -59,6 +59,34 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--can-bitrate", type=int, default=argparse.SUPPRESS)
         command.add_argument("--sdk-project", default=argparse.SUPPRESS)
         command.add_argument(
+            "--camera",
+            dest="camera_enabled",
+            action=argparse.BooleanOptionalAction,
+            default=argparse.SUPPRESS,
+        )
+        command.add_argument(
+            "--camera-preview",
+            action=argparse.BooleanOptionalAction,
+            default=argparse.SUPPRESS,
+        )
+        command.add_argument(
+            "--camera-depth",
+            dest="camera_depth_enabled",
+            action=argparse.BooleanOptionalAction,
+            default=argparse.SUPPRESS,
+            help="capture native Z16 depth in addition to RGB",
+        )
+        command.add_argument("--camera-serial", default=argparse.SUPPRESS)
+        for option in ("camera-width", "camera-height", "camera-fps"):
+            command.add_argument(f"--{option}", type=int, default=argparse.SUPPRESS)
+        command.add_argument(
+            "--camera-png-compress-level",
+            type=int,
+            choices=range(10),
+            default=argparse.SUPPRESS,
+            help="lossless PNG compression: 0 is fastest, 1..9 use more CPU",
+        )
+        command.add_argument(
             "--joint-signs", nargs=6, type=int, default=argparse.SUPPRESS
         )
         for option in (
@@ -124,6 +152,7 @@ def _parser() -> argparse.ArgumentParser:
     convert.add_argument("--repo-id")
     convert.add_argument("--without-velocity", action="store_true")
     convert.add_argument("--without-ee-pose", action="store_true")
+    convert.add_argument("--max-camera-skew-ms", type=float)
     return parser
 
 
@@ -184,6 +213,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             for name in ("without_velocity", "without_ee_pose"):
                 if getattr(args, name):
                     extra.append("--" + name.replace("_", "-"))
+            if args.max_camera_skew_ms is not None:
+                extra.extend(["--max-camera-skew-ms", str(args.max_camera_skew_ms)])
             return convert_session(
                 config, args.session.resolve(), args.output.resolve(), extra
             )

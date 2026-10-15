@@ -7,16 +7,17 @@ controller 是应用入口。它决定使用哪些客户端、何时启动或关
 ```mermaid
 flowchart LR
     G[GELLO 库：读取与校准] --> C[controller：映射与跟随]
+    A[RealSense 库：RGB-D 帧与时钟] --> C
     C -->|ZMQ action| S[SDK 服务：CAN 与机械臂]
     S -->|ZMQ observation| C
-    C --> R[data/raw：JSONL 与 manifest]
+    C --> R[data/raw：JSONL、图像与 manifest]
     R --> L[converter：校验和时间对齐]
     L --> D[data/lerobot：Dataset v3]
 ```
 
 | 运行单元 | 环境 | 数据/设备所有权 |
 | --- | --- | --- |
-| controller + GELLO 基础包 | 根目录 `.venv`，3.11 | GELLO 串口、机器人客户端、应用状态、raw |
+| controller + GELLO 基础包 + camera | 根目录 `.venv`，3.11 | GELLO 串口、相机、机器人客户端、应用状态、raw |
 | SDK server | SDK 自己的 `.venv`，3.11 | CAN、机械臂反馈与命令 |
 | converter | converter 自己的 `.venv`，3.12 | 只读 raw，写新 LeRobot 数据集 |
 
@@ -26,15 +27,15 @@ GELLO 的原始实现位于 `gello/`；controller 导入兼容的 `agilex_gello_
 
 ## 生命周期
 
-默认 `follow` 与 `record` 共用 workflow：
+原有无相机入口和新增相机入口的 `follow` 与 `record` 共用 workflow：
 
 1. 校验配置，获取与旧启动入口共用的互斥锁。
 2. 检查串口权限与 SDK endpoint，配置 CAN，验证反馈。
 3. 读取 GELLO，显示主从目标，等待运动确认。
-4. 启动独立 session 的 SDK 子进程，等待七自由度 RPC 就绪。
+4. 启用相机时先启动并预热 RGB-D、确认两路对齐时间域；相机脚本同时启用预览。再启动独立 session 的 SDK 子进程，等待七自由度 RPC 就绪。
 5. JS 分步回零并对齐，创建主手，再执行带启动误差检查的跟随。
 6. 收到 Ctrl+C/SIGTERM 或异常时，停止循环，关闭主手与原客户端，使用新客户端尝试 JS 回零并停止所拥有的服务。
-7. 刷新 raw；只有前面流程正常退出且有正式 episode 时才自动转换。
+7. 关闭相机并刷新图像与 raw；只有前面流程正常退出且有正式 episode 时才自动转换。
 
 SDK 子进程不会随终端 Ctrl+C 先于回零退出。初始化中的停止请求会延迟到资源引用取得后处理；清理阶段屏蔽重复停止信号。RPC 失败、回零失败和写盘失败会报告错误，已保存 raw 可单独转换。
 
@@ -44,7 +45,7 @@ SDK 子进程不会随终端 Ctrl+C 先于回零退出。初始化中的停止�
 
 默认控制频率为 50 Hz。controller 读取主手、映射六轴目标、限制六轴单步变化，发送最终 action，再读取 observation；夹爪单独直接传递。
 
-raw v1 的每行包含：
+raw v1/v2 的关节行包含：
 
 - `sequence`：episode 内从 0 连续递增。
 - `command_time_ns`、`observation_time_ns`：主机单调时钟，分别在发送前和反馈返回后打点。
@@ -58,7 +59,7 @@ raw v1 的每行包含：
 
 队列写盘与控制循环分离。R 创建 `.jsonl.partial`；S 等待落盘后原子改名为 `.jsonl`；D 删除当前 partial。退出时活动 episode 刷新为 partial，转换器忽略它。
 
-一次 session 生成一份数据集；目标目录已存在时转换失败。raw 保持 v1 兼容，既有数值 session 仍可使用原转换器。未来增加传感器时，需要另行约定流格式和完整性条件。
+一次 session 生成一份数据集；目标目录已存在时转换失败。相机使用 raw v2，图像与关节各自异步写盘；S 刷新全部写线程，先发布图像目录，最后发布正式关节 JSONL。正式关节文件是转换入口；异常集保持 partial，极端中断留下的孤立图像目录不单独转换。无相机继续写 v1。详见[相机与同步](cameras.md)。
 
 ## 子项目独立文档
 
@@ -68,4 +69,5 @@ raw v1 的每行包含：
 | --- | --- | --- |
 | GELLO | [README](../agilex-gello-software/README.md) / [架构](../agilex-gello-software/docs/index.md) | [CONTRIBUTING](../agilex-gello-software/CONTRIBUTING.md) |
 | SDK | [README](../agilex-sdk-python/README.md) / [协议](../agilex-sdk-python/docs/index.md) | [CONTRIBUTING](../agilex-sdk-python/CONTRIBUTING.md) |
+| Camera | [README](../camera-realsense/README.md) / [采集 API](../camera-realsense/docs/stream.md) | [CONTRIBUTING](../camera-realsense/CONTRIBUTING.md) |
 | Converter | [README](../lerobot-converter/README.md) / [数据流](../lerobot-converter/docs/index.md) | [CONTRIBUTING](../lerobot-converter/CONTRIBUTING.md) |

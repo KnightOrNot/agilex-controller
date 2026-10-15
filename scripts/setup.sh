@@ -14,7 +14,7 @@ usage() {
     cat <<'EOF'
 用法：./scripts/setup.sh [选项]
 
-初始化 agilex-controller 的 submodule、pyenv Python、controller 与三个子项目的 uv 环境和系统依赖。
+初始化 agilex-controller 的 submodule、pyenv Python、controller 与四个子项目的 uv 环境和系统依赖。
 脚本不会配置 CAN、访问串口或向机械臂发送命令，可安全重复执行。
 
 选项：
@@ -155,7 +155,7 @@ else
     log "[4/7] 检查 Git submodule"
 fi
 
-for submodule_path in agilex-sdk-python agilex-gello-software lerobot-converter; do
+for submodule_path in agilex-sdk-python agilex-gello-software lerobot-converter camera-realsense; do
     [[ -f "$submodule_path/pyproject.toml" ]] \
         || fail "$submodule_path 尚未初始化；请取消 --skip-submodules"
 done
@@ -200,6 +200,7 @@ else
     sync_project agilex-gello-software
 fi
 sync_project lerobot-converter --extra dataset
+sync_project camera-realsense
 sync_project .
 
 log "[6/7] 创建数据目录并验证软件入口"
@@ -211,6 +212,7 @@ fi
 .venv/bin/python -m agilex_controller --help >/dev/null
 .venv/bin/python -c "from agilex_gello_software.agents.gello_agent import GelloAgent; from agilex_controller.configuration import load_config; load_config()"
 .venv/bin/python -c "from gello.agents.gello_agent import GelloAgent; import dynamixel_sdk"
+.venv/bin/python -c "from camera_realsense.stream import ColorStream; from PIL import Image"
 agilex-sdk-python/.venv/bin/agilex-sdk-python --help >/dev/null
 agilex-sdk-python/.venv/bin/agilex-sdk-python-server --help >/dev/null
 agilex-gello-software/.venv/bin/agilex-gello-software --help >/dev/null

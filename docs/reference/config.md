@@ -82,3 +82,34 @@ uv run agilex-controller record --config config/experiment.toml \
 ```
 
 修改设备配置后先执行只读 `read` 并核对各轴与夹爪，再进行运动验证。
+
+## camera
+
+```toml
+[camera]
+enabled = false
+name = "front"
+serial = ""
+width = 640
+height = 480
+fps = 30
+depth_enabled = true
+depth_width = 640
+depth_height = 480
+depth_fps = 30
+warmup_frames = 15
+startup_timeout_s = 10.0
+frame_timeout_s = 1.0
+queue_size = 32
+png_compress_level = 0
+max_skew_ms = 50.0
+preview = false
+```
+
+`serial` 为空仅允许发现一台相机；尺寸/FPS 必须是设备支持的组合。RGB 与深度可配置不同 profile，按各自时间戳对齐。`name` 必须以字母开头且仅包含字母、数字和下划线；深度流自动命名为 `<name>_depth`。
+
+`warmup_frames` 是每路跳过的初始帧数；startup 超时要求全部启用流产生主机时间域的新帧，frame 超时检查每路最后接收时刻。`queue_size` 为每路写盘队列容量，满时失败而非静默丢帧。尺寸/FPS/容量为正整数，预热帧数可为零，三个超时/误差值为正有限数。
+
+`png_compress_level` 是 0..9 的整数，默认 0：关闭 PNG 的压缩计算，仍然无损保存完整 RGB8/Z16。1..9 可以减小文件，但增加 CPU 负担；CLI `--camera-png-compress-level` 优先于 TOML。编码使用固定 None 行过滤以避免逐行自适应过滤开销。默认 640×480 双路 30 FPS 的图像数据约 46 MB/s（约 2.8 GB/分钟），请保留足够空间。增大 queue_size 仅能吸收瞬时写盘抖动，不能弥补长期吞吐不足；默认每路 32 帧约一秒缓冲。
+
+`max_skew_ms` 写入 manifest，约束转换时每路帧与目标时间的误差；不是曝光精度保证。`preview` 仅预览 RGB，独立进程可跳过显示帧但不跳过录制帧。`enabled=false` 是默认值，原有脚本保持无相机 raw v1；新的相机跟随/数采脚本通过 CLI 启用 camera 与 preview，覆盖 TOML。`depth_enabled=false` 仅关闭深度。

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- 图像写盘改用固定行过滤的快速无损 PNG，默认 png_compress_level=0，保留逐文件 fsync 和原始 RGB/Z16；新增 TOML/CLI 压缩等级配置、队列满吞吐诊断和无损读回测试，避免自适应 PNG 编码导致持续积压。
+
+- 修复相机预热期间帧号回退直接中断启动：双流就绪前重新建立基线，运行期仍严格报错；补充相机就绪提示和启动超时诊断。
+
+- 引入 camera-realsense submodule，新增 start_camera_follow.sh / start_camera_record.sh，分别提供跟随预览和 RGB-D 数采；原有脚本与默认配置恢复无相机流程。
+- 新增 raw v2 无损 RGB/Z16 图像、独立 SDK 时间戳与标定；保留无相机 raw v1。
+- converter 按同一目标轴独立匹配关节/RGB/深度，超限拒绝，输出 RGB MP4 与无损米制深度图像，并报告匹配质量。
+- 新增 RGB-D 录制失败清理、缺帧/队列满和真实 LeRobot 视频/深度读回回归；实体相机与机械臂联调待验证。
+
 - GELLO 恢复原始上游目录，将本地 API/生命周期适配留在 src；安装流程初始化固定 DynamixelSDK，两个 uv.lock 同步依赖来源，保留现有 controller 调用与 raw 格式。
 - 统一三个 submodule 的 README、贡献/agent 指南、版本记录和 docs 结构，更新独立使用与 controller 联调说明；保留已有许可并记录未选定许可的项目状态。
 - 将 PiPER-X/GELLO 的客户端组合、设备预检、JS 对齐、跟随、原始录制和退出流程迁入 Python 3.11 controller。

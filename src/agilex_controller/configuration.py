@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 import tomllib
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
@@ -49,6 +50,27 @@ class RecordingConfig:
 
 
 @dataclass(frozen=True)
+class CameraConfig:
+    enabled: bool = False
+    name: str = "front"
+    serial: str = ""
+    depth_enabled: bool = True
+    depth_width: int = 640
+    depth_height: int = 480
+    depth_fps: int = 30
+    width: int = 640
+    height: int = 480
+    fps: int = 30
+    warmup_frames: int = 15
+    startup_timeout_s: float = 10.0
+    frame_timeout_s: float = 1.0
+    queue_size: int = 32
+    png_compress_level: int = 0
+    max_skew_ms: float = 50.0
+    preview: bool = False
+
+
+@dataclass(frozen=True)
 class SafetyConfig:
     max_start_error_rad: float = 0.35
     transition_step_rad: float = 0.02
@@ -71,6 +93,7 @@ class ControllerConfig:
     robot: RobotConfig = field(default_factory=RobotConfig)
     gello: GelloConfig = field(default_factory=GelloConfig)
     recording: RecordingConfig = field(default_factory=RecordingConfig)
+    camera: CameraConfig = field(default_factory=CameraConfig)
     safety: SafetyConfig = field(default_factory=SafetyConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
 
@@ -78,6 +101,48 @@ class ControllerConfig:
         return (self.root / getattr(self.paths, name)).resolve()
 
     def validate(self) -> None:
+        camera = self.camera
+        if any(
+            type(getattr(camera, key)) is not bool
+            for key in ("enabled", "preview", "depth_enabled")
+        ):
+            raise ValueError(
+                "camera enabled, preview and depth_enabled must be boolean"
+            )
+        if not isinstance(camera.name, str) or not re.fullmatch(
+            r"[A-Za-z][A-Za-z0-9_]*", camera.name
+        ):
+            raise ValueError(
+                "camera.name must be an identifier without path separators"
+            )
+        if not isinstance(camera.serial, str):
+            raise ValueError("camera.serial must be a string; empty selects one device")
+        for name in (
+            "width",
+            "height",
+            "fps",
+            "depth_width",
+            "depth_height",
+            "depth_fps",
+            "queue_size",
+        ):
+            if type(getattr(camera, name)) is not int or getattr(camera, name) <= 0:
+                raise ValueError(f"camera.{name} must be a positive integer")
+        if type(camera.warmup_frames) is not int or camera.warmup_frames < 0:
+            raise ValueError("camera.warmup_frames must be a non-negative integer")
+        if (
+            type(camera.png_compress_level) is not int
+            or not 0 <= camera.png_compress_level <= 9
+        ):
+            raise ValueError("camera.png_compress_level must be an integer in [0, 9]")
+        for name in ("startup_timeout_s", "frame_timeout_s", "max_skew_ms"):
+            value = getattr(camera, name)
+            if (
+                type(value) not in (int, float)
+                or not math.isfinite(value)
+                or value <= 0
+            ):
+                raise ValueError(f"camera.{name} must be positive and finite")
         for name, value in (
             ("robot.port", self.robot.port),
             ("robot.can_bitrate", self.robot.can_bitrate),
@@ -160,11 +225,20 @@ SECTIONS = {
     "robot": RobotConfig,
     "gello": GelloConfig,
     "recording": RecordingConfig,
+    "camera": CameraConfig,
     "safety": SafetyConfig,
     "paths": PathsConfig,
 }
 
 OVERRIDES = {
+    "camera_enabled": ("camera", "enabled"),
+    "camera_depth_enabled": ("camera", "depth_enabled"),
+    "camera_preview": ("camera", "preview"),
+    "camera_serial": ("camera", "serial"),
+    "camera_width": ("camera", "width"),
+    "camera_height": ("camera", "height"),
+    "camera_fps": ("camera", "fps"),
+    "camera_png_compress_level": ("camera", "png_compress_level"),
     "host": ("robot", "host"),
     "port": ("robot", "port"),
     "hz": ("robot", "hz"),

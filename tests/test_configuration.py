@@ -17,6 +17,14 @@ def test_migrated_calibration_matches_previous_installation():
     assert value.gello.gripper_config == (7, 159, 201)
 
 
+def test_camera_png_compression_toml_and_cli_override(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[camera]\npng_compress_level = 3\n")
+    assert load_config(tmp_path, path).camera.png_compress_level == 3
+    args = _parser().parse_args(["record", "--camera-png-compress-level", "0"])
+    assert load_config(tmp_path, path, vars(args)).camera.png_compress_level == 0
+
+
 @pytest.mark.parametrize("before_command", [True, False])
 def test_config_cli_precedence_and_relative_paths(
     tmp_path, monkeypatch, before_command

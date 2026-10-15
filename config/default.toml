@@ -28,6 +28,28 @@ max_command_step_rad = 1.0
 request_timeout_s = 2.0
 startup_timeout_s = 15.0
 
+[camera]
+# Legacy follow/record remain camera-free; camera wrappers enable capture/preview.
+depth_enabled = true
+depth_width = 640
+depth_height = 480
+depth_fps = 30
+enabled = false
+name = "front"
+# Empty selects the only connected camera. Set a serial when several are present.
+serial = ""
+width = 640
+height = 480
+fps = 30
+warmup_frames = 15
+startup_timeout_s = 10.0
+frame_timeout_s = 1.0
+queue_size = 32
+# Lossless PNG: 0 avoids compression CPU cost; 1..9 trade CPU for smaller files.
+png_compress_level = 0
+max_skew_ms = 50.0
+preview = false
+
 [paths]
 # Relative paths resolve against the repository root, not the shell's cwd.
 sdk_project = "agilex-sdk-python"
