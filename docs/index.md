@@ -59,3 +59,13 @@ raw v1 的每行包含：
 队列写盘与控制循环分离。R 创建 `.jsonl.partial`；S 等待落盘后原子改名为 `.jsonl`；D 删除当前 partial。退出时活动 episode 刷新为 partial，转换器忽略它。
 
 一次 session 生成一份数据集；目标目录已存在时转换失败。raw 保持 v1 兼容，既有数值 session 仍可使用原转换器。未来增加传感器时，需要另行约定流格式和完整性条件。
+
+## 子项目独立文档
+
+各 submodule 的 README 提供独立快速开始，`docs/` 提供安装、CLI、配置与排障，CONTRIBUTING 说明开发检查与提交要求。
+
+| 项目 | 使用与架构 | 贡献指南 |
+| --- | --- | --- |
+| GELLO | [README](../agilex-gello-software/README.md) / [架构](../agilex-gello-software/docs/index.md) | [CONTRIBUTING](../agilex-gello-software/CONTRIBUTING.md) |
+| SDK | [README](../agilex-sdk-python/README.md) / [协议](../agilex-sdk-python/docs/index.md) | [CONTRIBUTING](../agilex-sdk-python/CONTRIBUTING.md) |
+| Converter | [README](../lerobot-converter/README.md) / [数据流](../lerobot-converter/docs/index.md) | [CONTRIBUTING](../lerobot-converter/CONTRIBUTING.md) |
