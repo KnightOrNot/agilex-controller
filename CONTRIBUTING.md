@@ -2,6 +2,10 @@
 
 ## 开发环境
 
+本轮新数采开发统一使用 `dev`。新链路仅修改 `src/agilex_data_collection/`
+和独立 `agilex-adapters` 子模块，保持原 controller 运行链路不变。
+新应用环境安装、模拟验证及接口边界见[数采开发说明](docs/data-collection.md)。
+
 controller 使用 Python 3.11 和 uv，依赖由 `pyproject.toml` 与 `uv.lock` 管理。GELLO 与 camera-realsense 通过本地 editable 依赖安装；不要在 controller 环境中安装 SDK 硬件依赖、LeRobot 或 PyTorch。
 
 ```bash

@@ -10,3 +10,6 @@
 [submodule "camera-realsense"]
 	path = camera-realsense
 	url = git@github.com:KnightOrNot/camera-realsense.git
+[submodule "agilex-adapters"]
+	path = agilex-adapters
+	url = git@github.com:KnightOrNot/agilex-adapters.git

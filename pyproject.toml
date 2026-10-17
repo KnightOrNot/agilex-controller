@@ -17,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 agilex-controller = "agilex_controller.cli:main"
+agilex-data-collection = "agilex_data_collection:main"
 
 [dependency-groups]
 dev = ["pytest>=8.3", "ruff>=0.9"]
@@ -39,3 +40,6 @@ select = ["E", "F", "I"]
 [build-system]
 requires = ["uv_build>=0.12.7,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = ["agilex_controller", "agilex_data_collection"]

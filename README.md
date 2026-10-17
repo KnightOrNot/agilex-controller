@@ -2,6 +2,11 @@
 
 PiPER-X 与 GELLO 的应用编排和数采入口。controller 创建客户端，管理设备检查、SDK 服务、JS 定位、跟随循环和原始 episode；`lerobot-converter` 在独立 Python 3.12 环境中完成时间对齐和 LeRobot Dataset v3 转换。保留原有无相机流程，并提供带相机预览的跟随与 RGB-D 数采入口。
 
+新增的 `agilex-data-collection` 提供独立的浏览器按键数采流程：使用
+`agilex-adapters` 接入 LeRobot，在独立 Python 3.12 环境中运行，并复用
+LeLab 的数据集浏览功能。原 `agilex-controller` 命令和 Shell 流程保持不变。
+安装与使用见[新数采流程](docs/data-collection.md)。
+
 ## 职责与目录
 
 | 组件 | 职责 |
@@ -26,7 +31,9 @@ data/raw/                 原始 session，Git 忽略
 data/lerobot/             派生数据集，Git 忽略
 ```
 
-四个子项目以 Git submodule 固定版本。controller 将 GELLO 基础包和相机库作为本地 editable 依赖安装；SDK 服务和转换器使用各自的解释器，通过 ZMQ 和文件协作。
+五个子项目以 Git submodule 固定版本，包括新加入的 `agilex-adapters/`。
+controller 将 GELLO 基础包和相机库作为本地 editable 依赖安装；SDK 服务、
+转换器和新数采应用使用各自的解释器，通过 IPC、ZMQ 和文件协作。
 
 GELLO 的原生 `gello/` 与本地 `src/` 适配分开维护。controller 继续使用 `agilex_gello_software` 的校准/生命周期 API；DynamixelSDK 改由 GELLO 内固定的嵌套 submodule 提供，安装脚本会初始化它。详情见 [GELLO 开发文档](agilex-gello-software/README.md)。
 

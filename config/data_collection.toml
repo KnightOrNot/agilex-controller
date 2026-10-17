@@ -1,0 +1,10 @@
+# Independent app configuration. Calibration is read from the existing installation.
+hardware_config = "config/default.toml"
+data_root = "data/lerobot/app"
+control_hz = 50
+dataset_fps = 30
+max_skew_ms = 50
+queue_size = 90
+watchdog_s = 1.0
+camera_enabled = true
+depth_enabled = true

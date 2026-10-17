@@ -33,3 +33,50 @@ Preserve upstream style in GELLO; avoid unrelated formatting. Run its pytest and
 ## Commits & Pull Requests
 
 Prefer concise imperative messages with conventional prefixes. Independent GELLO and submodule checkouts do not synchronize automatically. Publish tested submodule commits before updating parent gitlinks. PRs should state behavior, affected repositories, checks, hardware-validation status, and relevant issues. Update usage/configuration documentation alongside behavior changes.
+
+## Independent LeRobot / LeLab Collection
+
+All current development uses `dev`, based on remote main at `de53db9`.
+Keep the original `src/agilex_controller/`, `config/default.toml`, and five Shell
+entry points unchanged for this migration. New application code belongs in
+`src/agilex_data_collection/`; `agilex-adapters/` is a separate Git submodule and
+also develops on `dev`.
+
+The 3.11 `agilex-data-collection` entry bootstraps a separate 3.12 environment in
+`agilex-adapters/.venv`. Adapters implement LeRobot Robot/Teleoperator protocols;
+the application owns web UI, worker lifecycle, control and persistence. The 3.11
+worker reuses existing low-level hardware helpers without invoking the old
+workflow, shares its hardware lock, and uses owner-private Unix IPC with a command
+watchdog. Do not expose pickle IPC over TCP or run competing control loops.
+
+Read `docs/data-collection.md` before changes. Run root regressions plus
+`uv run --project agilex-adapters --extra app pytest agilex-adapters/tests -q`.
+Simulation must not access physical hardware. Report actual hardware verification
+separately. The new raw app format is independent of legacy converter input;
+preserve native Z16, calibration and monotonic timing provenance.
+
+The user requires an immediate checkpoint here and no further implementation once
+their five-hour AI allowance reaches 10%. This quota is not exposed to the agent;
+honor any user notification, recording completed work, checks, failures and TODOs.
+
+### Current Implementation Checkpoint
+
+Implemented an independent browser panel for follow/record/save/discard/stop,
+LeRobot RGB video and meter-depth output, immutable sampled RGB/Z16 inputs and
+timing audit, plus the official LeLab read-only dataset browser. LeLab motion,
+SO101 calibration, training, upload and deletion APIs are intentionally unavailable.
+LeRobot is pinned to the matching PyPI 0.6.0 release; LeLab is pinned to
+`9b5afaee33baa1d773e499937564f3831d25de22`. Keep the explicit nested extras closure
+in the uv override: omitting it loses dataset dependencies; the upstream Git
+LeRobot source conflicts with the CPU torch index.
+
+Verified: 89 controller tests, 12 adapter/application tests (including real RGB-D
+save/discard/readback and write-failure cleanup), Ruff, both builds, actual CLI
+setup/start and HTTP smoke checks. Heavy dataset imports run before hardware
+startup to avoid first-record GIL stalls. Browser routing carries LeLab's supported
+`?api=` override so localhost/127.0.0.1 and custom ports work without CORS patches.
+
+Pending: operator-supervised physical GELLO/PiPER-X/RealSense validation, sustained
+full-resolution throughput and timestamp-quality measurement. No physical motion
+was performed. Changes remain uncommitted in both `dev` checkouts; do not publish
+or update the parent gitlink to unpublished child work without authorization.

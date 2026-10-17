@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 新增独立 `agilex-data-collection` 入口与 Python 3.12 应用环境，引入
+  `agilex-adapters` 子模块，为 PiPER-X/GELLO 提供 LeRobot 设备接口。
+- 新增浏览器跟随/采样/保存/丢弃/停止面板，直接写入 LeRobot RGB-D 数据集，
+  保留原始 Z16、校准与时间审计信息，接入 LeLab 官方只读数据浏览功能。
+  原 controller 源码、配置和 Shell 入口保持不变；真机联调待操作人员验证。
+
 - 图像写盘改用固定行过滤的快速无损 PNG，默认 png_compress_level=0，保留逐文件 fsync 和原始 RGB/Z16；新增 TOML/CLI 压缩等级配置、队列满吞吐诊断和无损读回测试，避免自适应 PNG 编码导致持续积压。
 
 - 修复相机预热期间帧号回退直接中断启动：双流就绪前重新建立基线，运行期仍严格报错；补充相机就绪提示和启动超时诊断。
