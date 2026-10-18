@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 相机库新增 640×360@90 FPS 优先、逐流吞吐探测和 90/60/30 启动回退；
+  新数采应用默认 camera_mode=auto，保留旧 controller 的显式 profile。
+- 五个一级子模块全部提供 config/default.toml，补齐 SDK、GELLO 本地读取、
+  converter 和 adapters 的配置加载、覆盖校验、包内默认值和文档。SDK 硬件驱动、
+  原生 GELLO 及既有 controller 运行源码保持不变；USB3 相机实测待完成。
+
 - 新增独立 `agilex-data-collection` 入口与 Python 3.12 应用环境，引入
   `agilex-adapters` 子模块，为 PiPER-X/GELLO 提供 LeRobot 设备接口。
 - 新增浏览器跟随/采样/保存/丢弃/停止面板，直接写入 LeRobot RGB-D 数据集，

@@ -22,6 +22,8 @@ def test_help_does_not_import_runtime(capsys):
         "watchdog_s = -1",
         "control_hz = true",
         "camera_enabled = 1",
+        'camera_mode = "invalid"',
+        "camera_mode = []",
         "unknown = 1",
     ],
 )

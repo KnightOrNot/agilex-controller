@@ -23,7 +23,7 @@ from .config import AppConfig
 
 
 class Capture:
-    def __init__(self, config: Any, depth: bool) -> None:
+    def __init__(self, config: Any, depth: bool, mode: str = "auto") -> None:
         from camera_realsense.stream import ColorStream
 
         self._source = ColorStream(
@@ -36,6 +36,7 @@ class Capture:
             depth_width=config.depth_width,
             depth_height=config.depth_height,
             depth_fps=config.depth_fps,
+            mode=mode,
         )
         self._stop = threading.Event()
         self._lock = threading.Lock()
@@ -124,7 +125,9 @@ class Hardware:
         # CAN configuration must already have been completed by installation.
         initial = preflight(config, existing_server=False, skip_can_setup=True)
         if self.app.camera_enabled:
-            self.camera = Capture(config.camera, self.app.depth_enabled)
+            self.camera = Capture(
+                config.camera, self.app.depth_enabled, self.app.camera_mode
+            )
         self.server = SDKServer(config)
         wait_for_server(config, self.server)
         self.ready = True

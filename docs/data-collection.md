@@ -44,6 +44,13 @@ GELLO；停止会再次尝试 JS 回零。网页关闭不会停止会话，必�
 复用串口、关节标定、CAN、相机序列号和分辨率；新应用独立启用 RGB-D。
 修改采样频率时保持 `dataset_fps <= control_hz`。
 
+新应用 `camera_mode="auto"` 默认使用相机库中的 640×360@90 高速预设，
+逐路测速不足时按 90/60/30 回退；`slow` 直接尝试低速，`manual` 精确使用
+`hardware_config` 的相机分辨率和 FPS。高速候选和探测阈值在
+`camera-realsense/config/default.toml` 的 `[performance]`。
+这不会提高默认 30 FPS 的数据集时间轴或 50 Hz 控制频率。实际 profile、
+内外参和吞吐诊断取自启动后的 metadata；旧 controller 的显式 profile 保持原值。
+
 - `data/lerobot/app/<session>/`：直接由官方 LeRobotDataset 写入的 v3 数据集。
 - `data/raw/app/<session>/`：不可变输入，含设备标定/时钟元数据、各 take 的时间戳
   JSONL、原始 RGB uint8 / 深度 Z16 `.npy`，以及保存或丢弃结果。

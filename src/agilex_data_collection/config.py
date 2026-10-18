@@ -18,6 +18,7 @@ class AppConfig:
     queue_size: int = 90
     watchdog_s: float = 1.0
     camera_enabled: bool = True
+    camera_mode: str = "auto"
     depth_enabled: bool = True
 
     @classmethod
@@ -45,4 +46,11 @@ class AppConfig:
         for name in ("camera_enabled", "depth_enabled"):
             if type(getattr(config, name)) is not bool:
                 raise ValueError(f"{name} must be a boolean")
+        if type(config.camera_mode) is not str or config.camera_mode not in {
+            "auto",
+            "fast",
+            "slow",
+            "manual",
+        }:
+            raise ValueError("camera_mode must be auto, fast, slow or manual")
         return config

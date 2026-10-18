@@ -7,4 +7,6 @@ max_skew_ms = 50
 queue_size = 90
 watchdog_s = 1.0
 camera_enabled = true
+# auto prefers measured 640x360@90; slow skips fast modes; manual uses hardware_config.
+camera_mode = "auto"
 depth_enabled = true

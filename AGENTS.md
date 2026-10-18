@@ -10,7 +10,7 @@
 - `tests/` covers controller behavior; `docs/` contains architecture, installation, CLI, configuration, and troubleshooting. Preserve hardware reference assets.
 - `data/raw/` is immutable input; `data/lerobot/` is regenerated output. Neither belongs in Git.
 
-Camera owns reusable acquisition and SDK-to-host clock mapping; controller owns lifecycle and raw persistence; converter owns timestamp matching and LeRobot output. Preserve native Z16 depth and calibration. The robot SDK remains unchanged.
+Camera owns reusable acquisition and SDK-to-host clock mapping; controller owns lifecycle and raw persistence; converter owns timestamp matching and LeRobot output. Preserve native Z16 depth and calibration. The robot SDK hardware layer remains unchanged; its standalone CLI/server defaults now load the SDK TOML.
 
 ## Build, Test, and Development Commands
 
@@ -70,7 +70,7 @@ LeRobot is pinned to the matching PyPI 0.6.0 release; LeLab is pinned to
 in the uv override: omitting it loses dataset dependencies; the upstream Git
 LeRobot source conflicts with the CPU torch index.
 
-Verified: 89 controller tests, 12 adapter/application tests (including real RGB-D
+Verified: 91 controller tests, 21 adapter/application tests (including real RGB-D
 save/discard/readback and write-failure cleanup), Ruff, both builds, actual CLI
 setup/start and HTTP smoke checks. Heavy dataset imports run before hardware
 startup to avoid first-record GIL stalls. Browser routing carries LeLab's supported
@@ -78,5 +78,32 @@ startup to avoid first-record GIL stalls. Browser routing carries LeLab's suppor
 
 Pending: operator-supervised physical GELLO/PiPER-X/RealSense validation, sustained
 full-resolution throughput and timestamp-quality measurement. No physical motion
-was performed. Changes remain uncommitted in both `dev` checkouts; do not publish
-or update the parent gitlink to unpublished child work without authorization.
+was performed. Camera/configuration changes are recorded in local `dev` commits
+across the controller and five submodules, as authorized by the user. Remote
+publication still requires authorization.
+
+## Submodule Configuration and Camera Profiles
+
+All five first-party submodules now expose `config/default.toml`; use each
+repository's local configuration loader, not the parent TOML implicitly. Four
+new loaders support partial overrides; camera retains its full-file selection
+contract. Packaged default TOML links point at the one repository source and
+are materialized into wheels; validate wheel imports when changing packaging.
+Keep upstream nested submodules and GELLO native YAML tools unchanged.
+
+Camera performance defaults prefer 640x360@90, then 60, then baseline-resolution
+30 FPS, probing each stream's actual received rate before exposing frames.
+`ColorStream` callers that explicitly supply a profile keep manual semantics
+unless they explicitly select a mode. The independent app passes camera_mode
+from config/data_collection.toml (auto by default); legacy controller profiles
+remain unchanged. Read docs/reference/submodule-config.md and the camera config
+reference. Do not switch profiles in an active recorded stream or lose native
+Z16, timestamp provenance or final-profile calibration. Physical throughput
+validation remains pending; this session found no connected RealSense device.
+
+Latest camera/configuration validation: 298 tests passed across controller (91),
+camera (64), SDK (65), GELLO (29), converter (28) and adapters (21). Camera and
+SDK Pyright, per-repository lint, GELLO offline upstream audit and distribution
+builds passed. All five wheels were extracted outside the checkout and loaded
+their materialized defaults, matching the repository TOML. No camera capture,
+CAN motion or remote push was performed for this update.

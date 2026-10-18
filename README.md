@@ -56,6 +56,11 @@ GELLO 的原生 `gello/` 与本地 `src/` 适配分开维护。controller 继续
 
 ## 配置与只读检查
 
+五个一级子模块现在都提供 `config/default.toml`；配置范围、覆盖规则和
+快速相机预设见[子模块配置说明](docs/reference/submodule-config.md)。
+新数采应用默认优先 RGB-D 640×360@90 FPS，按逐路实测回退到 60/30；
+原 controller 的显式相机参数保持不变。
+
 先检查 [config/default.toml](config/default.toml)。设备 ID、弧度 offset、设备方向和夹爪端点必须与当前 GELLO 标定一致；`follower_signs` 是额外的主手到从臂方向映射。
 
 ```bash
