@@ -5,7 +5,8 @@ PiPER-X 与 GELLO 的应用编排和数采入口。controller 创建客户端，
 新增的 `agilex-data-collection` 提供独立的浏览器按键数采流程：使用
 `agilex-adapters` 接入 LeRobot，在独立 Python 3.12 环境中运行，并复用
 LeLab 的数据集浏览功能。原 `agilex-controller` 命令和 Shell 流程保持不变。
-安装与使用见[新数采流程](docs/data-collection.md)。
+快速上手见 [LeRobot / LeLab 数采快速启动](docs/data-collection-quickstart.md)，
+详细配置与架构见[新数采流程](docs/data-collection.md)。
 
 ## 职责与目录
 

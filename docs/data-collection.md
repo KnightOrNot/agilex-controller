@@ -1,5 +1,7 @@
 # LeRobot / LeLab 浏览器数采
 
+按步骤启动并采集第一段数据，见[数采快速启动](data-collection-quickstart.md)。
+
 此链路处于 `dev` 开发分支。入口为 `agilex-data-collection`，实现放在
 `src/agilex_data_collection/`，设备适配在独立子模块 `agilex-adapters/`。
 原有 controller 源码、配置和五个 Shell 脚本的行为保持不变。
