@@ -55,8 +55,8 @@ Simulation must not access physical hardware. Report actual hardware verificatio
 separately. The new raw app format is independent of legacy converter input;
 preserve native Z16, calibration and monotonic timing provenance.
 
-The user requires an immediate checkpoint here and no further implementation once
-their five-hour AI allowance reaches 10%. This quota is not exposed to the agent;
+The user now requires an immediate checkpoint here and no further implementation once
+their five-hour AI allowance reaches 15% (replaces the previous 10%). This quota is not exposed to the agent;
 honor any user notification, recording completed work, checks, failures and TODOs.
 
 ### Current Implementation Checkpoint
@@ -107,3 +107,145 @@ SDK Pyright, per-repository lint, GELLO offline upstream audit and distribution
 builds passed. All five wheels were extracted outside the checkout and loaded
 their materialized defaults, matching the repository TOML. No camera capture,
 CAN motion or remote push was performed for this update.
+
+### Physical Startup Investigation (2026-10-20)
+
+The operator's session `20261020_121045_811fe47f` passed CAN/camera initialization
+but failed JS zero arrival: J3 remained +1.032 degrees, exceeding 1 degree both
+at startup and cleanup. The user explicitly chose to retain 1 degree; do not
+relax it, subtract an offset, change motion mode or recalibrate automatically.
+Read-only motor diagnostics found all joints enabled, fresh feedback (~3.6 ms),
+no reported motor/arm faults, J3 +1.032 degrees and CAN UP at 1 Mbit/s with zero
+reported bus errors. These facts do not identify the physical cause.
+
+New app positioning logs stage, six-axis start/final feedback, residuals, observed
+range and successful command count without adding RPCs. The worker reports primary
+and cleanup errors separately; the browser must prefer structured diagnostics over
+buffered cleanup messages. Startup and exit use the app's same 1-degree setting.
+Only the operator performed motion; agent checks were read-only or simulated.
+Pending: operator-supervised motion-response investigation from the new logs.
+
+The operator's subsequent session `20261020_121535_49fee27a` passed startup zero
+(J3 residual 0.921 degrees), GELLO alignment and exit zero within 1 degree. Its
+first saved episode contains 513 frames at 30 FPS. The operator explicitly
+reported pressing Ctrl+C; do not infer a save-time GIL stall from that session's
+heartbeat timeout alone. Repeatability of the earlier 1.032-degree residual is
+still unverified. Latest checks: 108 root tests and 22 adapter/app tests passed,
+Ruff and the root build passed. Test flock files are isolated in pytest temporary
+directories so simulations do not contend with the live operator's hardware lock;
+production old/new mutual exclusion remains unchanged. Changes are uncommitted.
+
+## Collection UI Optimization Roadmap (2026-10-20)
+
+Work incrementally on `dev`, preserving the old controller workflow. Stop new
+implementation immediately when the user reports 15% of the five-hour allowance
+remaining; record completed work, checks, failures and TODOs here. Remaining quota
+is not available through agent tools; never claim to monitor it automatically.
+
+Requested work, in order:
+
+1. **Implemented, mock-verified:** configure CAN when starting the new collection server, using the
+   SDK's existing script and hardware TOML interface/bitrate. Run in the terminal
+   where sudo can prompt; preserve the shared hardware lock and skip completely
+   for simulation. Environment installation must remain hardware-free.
+2. **Implemented:** remove the unused local-dataset-list link from the collection UI.
+3. **Implemented, HTTP-verified:** provide a reliable route from the official LeLab browser back to
+   collection, without modifying the upstream LeLab frontend.
+4. **Implemented; visual review pending:** make collection compact and attractive; remove the long startup
+   warning paragraph requested by the user. Preserve the explicit unchecked motion
+   confirmation, backend guard and 1-degree positioning acceptance.
+5. **Implemented; final regression, packaging and visual/hardware review pending:** improve camera preview: show actual FPS/resolution/mode beneath it,
+   target dataset FPS rather than the current 1 Hz status refresh, offer multiple
+   RGB/depth views and an interactive 3D point cloud with mouse view manipulation.
+   Keep native Z16, calibration and timestamp provenance; preview must not delay
+   control or recording. Distinguish measured preview FPS, capture FPS and dataset
+   FPS. Use calibrated deprojection/extrinsics for point cloud, not guessed depth.
+
+Baseline: 108 root tests and 24 adapter/app tests passed; Ruff and builds passed.
+Confirmed UI 409 was caused by an unchecked motion confirmation. The UI now gates
+start on confirmation/task/status, prevents duplicate start submissions and reports
+Chinese reasons. Previous fixes remain uncommitted; do not push or commit unless
+requested. No new hardware motion is authorized by this optimization task.
+
+Steps 1–4 checkpoint: `serve` configures CAN using the selected app/hardware TOML
+under the existing lock before exec; simulation and setup skip it, failure prevents
+server startup. No live CAN configuration was run by the agent. `/dataset-browser`
+wraps the unchanged official `/edit-dataset` UI with a permanent return link.
+Only the unused UI list link was removed; `/datasets` remains for official LeLab.
+Compact UI keeps confirmation and hides raw status in expandable details. Targeted
+checks: 30 entry/config/worker tests and 3 web/script tests passed.
+
+### Mandatory Stop Checkpoint — Quota Exhausted
+
+The user explicitly reported no remaining allowance and requested this checkpoint.
+Implementation is stopped. A subsequent "continue" resumed checkpoint documentation only;
+do not resume optimization until the user explicitly authorizes it with renewed
+allowance. All edits remain uncommitted on `dev`; do not commit or push implicitly.
+
+**Step 5 implementation now present:**
+
+- `preview.py` provides display-only depth colors, side-by-side native RGB/depth,
+  and depth-camera XYZ deprojection. Native Z16 and captured arrays are unchanged.
+  Point clouds require supported rectified intrinsics with zero distortion; reject
+  unsupported calibration. Colors encode depth, not RGB texture: no extrinsic RGB
+  projection is performed. Output is little-endian float32 XYZ meters, max 20000
+  points. TOML adds `preview_depth_max_m=3.0`, `preview_cloud_stride=4`.
+- Session publishes immutable latest frame references, camera metadata, per-session
+  generation/sequence and observed sampling FPS. Encoding/calculation run outside
+  the control thread. Generation guards prevent cross-session cached frames.
+- `/api/preview/ws?mode=rgb|depth|rgbd|cloud` streams metadata plus JPEG/XYZ, targeting
+  dataset FPS; status polling remains 1 Hz. Same-origin check and two-viewer limit
+  are implemented. Fixed deadlines avoid cumulative drift; old display frames are
+  dropped rather than replayed. The original JPEG endpoint remains compatible.
+- Homepage displays actual browser presentation FPS, observed/target sample FPS,
+  selected profile dimensions/FPS/mode. Native WebGL in `pointcloud.js` implements
+  pointer orbit, wheel zoom and double-click reset; it has no CDN dependencies.
+  Compact UI has a visible phase/saved-episode badge and foreground error summary.
+  The latest badge/error-summary edit has NOT yet been re-tested.
+
+**Checks actually completed during this optimization:**
+
+- 36 targeted root tests passed: CLI/config/CAN/worker (30) and preview geometry,
+  distortion rejection, transfer limits, immutable input (6).
+- 8 targeted web/script tests passed: navigation, HTTP confirmation, RGB/depth/
+  RGB-D/cloud WebSockets and cross-origin rejection, plus browser script execution
+  under Node with fake DOM/network (not an actual rendered browser).
+- The extended Node script test subsequently passed independently, exercising mode
+  changes, cloud payload handling, status polls preserving the stream, metadata
+  display and connection closure on stop. `node --check pointcloud.js` passed.
+- Ruff passed before the final small badge/error-summary edit; run again.
+- A real isolated `--simulate --port 18081` server delivered 91 frames per mode:
+  RGB 30.16, depth 30.00, RGB-D 29.83, cloud 29.99 FPS at a 30 FPS target, after
+  correcting deadline drift. These are WebSocket delivery rates using 64x48
+  simulation, NOT full-resolution hardware or browser-render FPS measurements.
+- Read-only saved camera metadata confirms D455F USB 3.2 selected 640x360@90,
+  startup probe ~89.97 FPS per stream, rectified depth intrinsics and native units.
+  No physical camera or robot was started by the agent for this optimization.
+
+**Incomplete work / next authorized session:**
+
+1. Run full root and adapter/app regressions, Ruff/format and builds after all
+   preview changes. Earlier full 108-root/24-app results are a baseline only.
+   Verify `pointcloud.js` is included in the wheel and served with JavaScript MIME.
+2. Actual browser screenshot/WebGL mouse interaction was not verified: CUA reported
+   IAB unavailable and no browsers. Do not claim visual QA passed. Check responsive
+   layout, RGB decoding throughput, cloud rotation/zoom/reset, navigation return,
+   mode switching, session errors, stop/restart and multiple-tab cleanup.
+3. Check full-resolution RealSense preview/record throughput and timing under
+   operator supervision; verify CAN startup/sudo behavior on real hardware. Keep
+   1-degree arrival acceptance. Simulation is insufficient for these claims.
+4. Finish preview documentation in `docs/data-collection.md` and quickstart. The
+   attempted preview-section patch failed to match and made no changes. CAN auto
+   setup, compact UI and return-navigation documentation edits DID apply earlier.
+   CHANGELOG has earlier fixes but needs the current optimization summary.
+5. Consider tests for unsupported/missing depth, WebSocket capacity/disconnect,
+   fresh-frame caching across restarts and viewer behavior under load. Check depth
+   versus RGB resolution labels if their profiles differ. Ensure preview errors
+   remain visible while raw status details are collapsed.
+
+**Local resources:** only the agent-created simulation server at port 18081 may be
+stopped during checkpoint cleanup (SIGTERM sent after checking its exact PID and
+arguments). User's service at port 8000 must not be stopped
+or restarted. Simulation was stopped through its own API after throughput tests;
+no record/save was requested. Test runs created synthetic raw manifests under
+`data/raw/app/`; do not confuse them with operator data or delete immutable raw.

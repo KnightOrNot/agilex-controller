@@ -17,6 +17,9 @@ class AppConfig:
     max_skew_ms: float = 50.0
     queue_size: int = 90
     watchdog_s: float = 1.0
+    position_tolerance_deg: float = 1.0
+    preview_depth_max_m: float = 3.0
+    preview_cloud_stride: int = 4
     camera_enabled: bool = True
     camera_mode: str = "auto"
     depth_enabled: bool = True
@@ -29,11 +32,16 @@ class AppConfig:
         if unknown:
             raise ValueError(f"unknown collection settings: {sorted(unknown)}")
         config = cls(**data)
-        for name in ("control_hz", "dataset_fps", "queue_size"):
+        for name in ("control_hz", "dataset_fps", "queue_size", "preview_cloud_stride"):
             value = getattr(config, name)
             if type(value) is not int or value <= 0:
                 raise ValueError(f"{name} must be a positive integer")
-        for name in ("max_skew_ms", "watchdog_s"):
+        for name in (
+            "max_skew_ms",
+            "watchdog_s",
+            "position_tolerance_deg",
+            "preview_depth_max_m",
+        ):
             value = getattr(config, name)
             if (
                 type(value) not in (float, int)

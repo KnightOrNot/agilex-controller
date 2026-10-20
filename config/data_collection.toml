@@ -6,6 +6,11 @@ dataset_fps = 30
 max_skew_ms = 50
 queue_size = 90
 watchdog_s = 1.0
+# Per-joint JS arrival tolerance for startup zero/alignment and exit zero.
+position_tolerance_deg = 1.0
+# Display only: colorized depth range and point-cloud decimation.
+preview_depth_max_m = 3.0
+preview_cloud_stride = 4
 camera_enabled = true
 # auto prefers measured 640x360@90; slow skips fast modes; manual uses hardware_config.
 camera_mode = "auto"

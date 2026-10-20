@@ -14,6 +14,20 @@ from agilex_controller.configuration import ControllerConfig
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(autouse=True)
+def isolated_workflow_lock(tmp_path, monkeypatch):
+    """Exercise real flock semantics without contending with an operator session."""
+    from agilex_controller import workflow
+
+    def isolated_path(*args, **kwargs):
+        path = Path(*args, **kwargs)
+        if path == Path("/tmp/start_gello_follow.lock"):
+            return tmp_path / "workflow.lock"
+        return path
+
+    monkeypatch.setattr(workflow, "Path", isolated_path)
+
+
 @pytest.fixture
 def config(tmp_path):
     value = ControllerConfig(root=ROOT)

@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 import signal
+import subprocess
 import threading
 import time
 from dataclasses import replace
@@ -20,6 +22,47 @@ import numpy as np
 import zmq
 
 from .config import AppConfig
+from .diagnostics import report_worker_error
+
+
+def check_can_ready(channel: str, bitrate: int) -> None:
+    """Inspect SocketCAN configuration without opening or enabling hardware."""
+    hint = (
+        f"run ./agilex-sdk-python/scripts/config_can.sh {channel} {bitrate} "
+        "before starting follow"
+    )
+    try:
+        result = subprocess.run(
+            ["ip", "-details", "-json", "link", "show", "dev", channel],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(
+            f"cannot inspect CAN interface {channel}; check iproute2 and device; {hint}"
+        ) from exc
+    try:
+        (link,) = json.loads(result.stdout)
+        info = link.get("linkinfo", {})
+        data = info.get("info_data", {})
+        flags = link["flags"]
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise RuntimeError(
+            f"invalid ip link response for CAN interface {channel}"
+        ) from exc
+    if info.get("info_kind") != "can":
+        raise RuntimeError(f"interface {channel} is not SocketCAN; {hint}")
+    if "UP" not in flags or data.get("state") in {"STOPPED", "BUS-OFF"}:
+        raise RuntimeError(
+            f"CAN interface {channel} is DOWN or stopped ({data.get('state')}); {hint}"
+        )
+    actual = data.get("bittiming", {}).get("bitrate")
+    if actual != bitrate:
+        raise RuntimeError(
+            f"CAN interface {channel} bitrate is {actual}, expected {bitrate}; {hint}"
+        )
 
 
 class Capture:
@@ -95,6 +138,50 @@ class Capture:
         self._source.close()
 
 
+class PositionProbe:
+    """Observe existing positioning RPCs without adding reads or changing targets."""
+
+    def __init__(self, robot: Any) -> None:
+        self.robot = robot
+        self.first: np.ndarray | None = None
+        self.last: np.ndarray | None = None
+        self.low: np.ndarray | None = None
+        self.high: np.ndarray | None = None
+        self.commands = 0
+        self.reads = 0
+
+    def get_joint_state(self) -> np.ndarray:
+        state = self.robot.get_joint_state()
+        self.last = state[:6].copy()
+        if self.first is None:
+            self.first = self.last.copy()
+            self.low = self.last.copy()
+            self.high = self.last.copy()
+        else:
+            self.low = np.minimum(self.low, self.last)
+            self.high = np.maximum(self.high, self.last)
+        self.reads += 1
+        return state
+
+    def command_joint_state(self, command: np.ndarray) -> None:
+        self.robot.command_joint_state(command)
+        self.commands += 1
+
+    def summary(self, target: np.ndarray) -> dict:
+        return {
+            "commands": self.commands,
+            "feedback_reads": self.reads,
+            "start_rad": self.first.tolist() if self.first is not None else None,
+            "final_rad": self.last.tolist() if self.last is not None else None,
+            "final_error_deg": np.rad2deg(self.last - target).tolist()
+            if self.last is not None
+            else None,
+            "observed_range_deg": np.rad2deg(self.high - self.low).tolist()
+            if self.first is not None
+            else None,
+        }
+
+
 class Hardware:
     def __init__(self, project: Path, app: AppConfig) -> None:
         self._stack = contextlib.ExitStack()
@@ -110,7 +197,6 @@ class Hardware:
         self.config = replace(config, robot=replace(config.robot, hz=app.control_hz))
 
     def start(self) -> None:
-        from agilex_controller.control import move_js
         from agilex_controller.gello import GelloLeader
         from agilex_controller.robot_client import RobotClient
         from agilex_controller.workflow import (
@@ -122,7 +208,8 @@ class Hardware:
 
         self._stack.enter_context(application_lock())
         config = self.config
-        # CAN configuration must already have been completed by installation.
+        # serve configures CAN; recheck before touching devices in case it changed.
+        check_can_ready(config.robot.can_interface, config.robot.can_bitrate)
         initial = preflight(config, existing_server=False, skip_can_setup=True)
         if self.app.camera_enabled:
             self.camera = Capture(
@@ -134,18 +221,68 @@ class Hardware:
         self.robot = RobotClient(
             config.robot.host, config.robot.port, config.safety.request_timeout_s
         )
-        for target in (np.zeros(6), initial[:6] * config.gello.follower_signs):
-            move_js(
+        for stage, target in (
+            ("startup_zero", np.zeros(6)),
+            ("gello_alignment", initial[:6] * config.gello.follower_signs),
+        ):
+            self._position(
                 self.robot,
                 target,
+                stage,
                 gripper=float(initial[6]),
-                step_rad=config.safety.transition_step_rad,
-                period=1 / self.app.control_hz,
             )
         self.leader = GelloLeader(config.gello, np.concatenate((initial[:6], [0.0])))
         observations = self.robot.get_observations()
         self.leader.align_to(observations["joint_positions"], observations)
         self._previous = observations["joint_positions"].copy()
+
+    def _position(
+        self,
+        robot: Any,
+        target: np.ndarray,
+        stage: str,
+        *,
+        gripper: float | None = None,
+    ) -> None:
+        from agilex_controller.control import move_js
+
+        print(
+            f"[position] {stage}: target_rad={target.tolist()}, "
+            f"tolerance_deg={self.app.position_tolerance_deg}",
+            flush=True,
+        )
+        probe = PositionProbe(robot)
+        result = "interrupted"
+        try:
+            move_js(
+                probe,
+                target,
+                gripper=gripper,
+                step_rad=self.config.safety.transition_step_rad,
+                period=1 / self.app.control_hz,
+                tolerance_deg=self.app.position_tolerance_deg,
+            )
+            result = "reached"
+        except Exception as exc:
+            result = "failed"
+            raise RuntimeError(
+                f"{stage}: {exc} (tolerance={self.app.position_tolerance_deg:g} deg)"
+            ) from exc
+        finally:
+            print(
+                "[position_result] "
+                + json.dumps(
+                    {
+                        "stage": stage,
+                        "result": result,
+                        "target_rad": target.tolist(),
+                        "tolerance_deg": self.app.position_tolerance_deg,
+                        **probe.summary(target),
+                    },
+                    allow_nan=False,
+                ),
+                flush=True,
+            )
 
     def call(self, method: str, args: dict) -> Any:
         if method == "status":
@@ -183,18 +320,41 @@ class Hardware:
         raise ValueError(f"unknown bridge method: {method}")
 
     def close(self) -> None:
+        from agilex_controller.robot_client import RobotClient
         from agilex_controller.workflow import _shutdown
 
-        errors = _shutdown(
-            self.config,
-            self.robot,
-            self.leader,
-            self.server,
-            self.ready,
-            None,
-            camera=self.camera,
-        )
-        self._stack.close()
+        errors = []
+        try:
+            # Release a possibly failed REQ socket and GELLO before zeroing.
+            errors.extend(
+                _shutdown(self.config, self.robot, self.leader, None, False, None)
+            )
+            if self.ready:
+                try:
+                    with RobotClient(
+                        self.config.robot.host,
+                        self.config.robot.port,
+                        self.config.safety.request_timeout_s,
+                    ) as client:
+                        self._position(client, np.zeros(6), "exit_zero")
+                except Exception as exc:
+                    errors.append(str(exc))
+        finally:
+            # A failed zero must still release the owned server, camera and lock.
+            try:
+                errors.extend(
+                    _shutdown(
+                        self.config,
+                        None,
+                        None,
+                        self.server,
+                        False,
+                        None,
+                        camera=self.camera,
+                    )
+                )
+            finally:
+                self._stack.close()
         if errors:
             raise RuntimeError("; ".join(errors))
 
@@ -222,7 +382,22 @@ class Simulation:
                 "camera": {
                     "width": 64,
                     "height": 48,
-                    "depth": {"width": 64, "height": 48, "depth_units_m": 0.001},
+                    "fps": 30,
+                    "profile_selection": {"requested_mode": "simulation"},
+                    "depth": {
+                        "width": 64,
+                        "height": 48,
+                        "depth_units_m": 0.001,
+                        "fps": 30,
+                        "intrinsics": {
+                            "fx": 64.0,
+                            "fy": 64.0,
+                            "ppx": 31.5,
+                            "ppy": 23.5,
+                            "model": "none",
+                            "coeffs": [0.0] * 5,
+                        },
+                    },
                 }
                 if self.app.camera_enabled
                 else None,
@@ -291,6 +466,8 @@ def main() -> int:
     context = zmq.Context()
     socket = context.socket(zmq.REP)
     socket.setsockopt(zmq.LINGER, 0)
+    failure: Exception | None = None
+    cleanup_error: Exception | None = None
     try:
         hardware.start()
         socket.bind(args.endpoint)
@@ -312,14 +489,23 @@ def main() -> int:
                 raise
     except KeyboardInterrupt:
         pass
+    except Exception as exc:
+        failure = exc
     finally:
         for number in (signal.SIGTERM, signal.SIGINT):
             signal.signal(number, signal.SIG_IGN)
         try:
             hardware.close()
+        except Exception as exc:
+            cleanup_error = exc
         finally:
             socket.close()
             context.term()
+    if failure is not None or cleanup_error is not None:
+        error = failure if failure is not None else cleanup_error
+        assert error is not None
+        report_worker_error(error, cleanup_error)
+        return 1
     return 0
 
 

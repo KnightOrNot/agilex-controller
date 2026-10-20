@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import uuid
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ from agilex_adapters.devices import JOINTS
 from agilex_adapters.transport import BridgeClient
 
 from .config import AppConfig
+from .diagnostics import worker_failure
 
 
 def aligned_frames(frames: dict, target_ns: int, max_skew_ms: float) -> dict:
@@ -52,6 +54,11 @@ class Session:
         self._epoch = 0
         self._status: dict = {"phase": "idle", "saved_episodes": 0, "error": None}
         self._preview: np.ndarray | None = None
+        self._preview_frames: dict = {}
+        self._camera_metadata: dict | None = None
+        self._preview_sequence = 0
+        self._preview_generation = 0
+        self._preview_times: deque = deque(maxlen=120)
         self._control_error: Exception | None = None
 
     def status(self) -> dict:
@@ -66,17 +73,40 @@ class Session:
         with self._lock:
             return self._preview
 
+    def preview_snapshot(self) -> dict:
+        """Borrow immutable latest arrays; encoding/deprojection happens elsewhere."""
+        with self._lock:
+            times = self._preview_times
+            fps = (
+                (len(times) - 1) / (times[-1] - times[0])
+                if len(times) > 1 and times[-1] > times[0]
+                else 0
+            )
+            return {
+                "generation": self._preview_generation,
+                "sequence": self._preview_sequence,
+                "frames": self._preview_frames,
+                "camera": self._camera_metadata,
+                "sample_fps": fps,
+            }
+
     def start(self, *, confirmed: bool, task: str) -> None:
         if not task.strip():
-            raise ValueError("task must not be empty")
+            raise ValueError("任务描述不能为空")
         if not self.simulate and not confirmed:
-            raise ValueError("confirm JS zeroing, GELLO alignment and exit zeroing")
+            raise ValueError("请先勾选运动范围安全确认；启动、对齐和退出回零都会运动")
         with self._lock:
             if self._thread and self._thread.is_alive():
-                raise RuntimeError("a session is already running")
+                raise RuntimeError("已有会话正在运行或清理，请等待停止完成后再启动")
             self._stop.clear()
             self._recording.clear()
             self._control_error = None
+            self._preview = None
+            self._preview_frames = {}
+            self._camera_metadata = None
+            self._preview_times.clear()
+            self._preview_sequence = 0
+            self._preview_generation += 1
             self._samples = queue.Queue(self.config.queue_size)
             self._commands = queue.Queue()
             self._status = {
@@ -149,6 +179,9 @@ class Session:
                     if "color" in frames:
                         with self._lock:
                             self._preview = frames["color"]["image"]
+                            self._preview_frames = frames
+                            self._preview_sequence += 1
+                            self._preview_times.append(time.monotonic())
                     if recording:
                         with self._lock:
                             if self._recording.is_set() and epoch == self._epoch:
@@ -257,14 +290,18 @@ class Session:
                     command,
                     stdout=stream,
                     stderr=subprocess.STDOUT,
-                    env={**os.environ, "PYTHONPATH": str(self.project / "src")},
+                    env={
+                        **os.environ,
+                        "PYTHONPATH": str(self.project / "src"),
+                        "PYTHONUNBUFFERED": "1",
+                    },
                 )
             self._update(worker_pid=process.pid)
             deadline = time.monotonic() + 120
             metadata = None
             while time.monotonic() < deadline and not self._stop.is_set():
                 if process.poll() is not None:
-                    raise RuntimeError(f"hardware worker exited; see {log}")
+                    raise worker_failure(log, process.returncode)
                 probe = BridgeClient(endpoint, timeout_s=0.1)
                 try:
                     metadata = probe.call("status")
@@ -277,6 +314,8 @@ class Session:
                 if self._stop.is_set():
                     return
                 raise TimeoutError("hardware startup timed out")
+            with self._lock:
+                self._camera_metadata = metadata.get("camera")
             control = threading.Thread(target=self._control, args=(endpoint,))
             control.start()
             raw.mkdir(parents=True, exist_ok=False)
@@ -292,7 +331,7 @@ class Session:
             episode = 0
             while not self._stop.is_set():
                 if process.poll() is not None:
-                    raise RuntimeError(f"hardware worker exited; see {log}")
+                    raise worker_failure(log, process.returncode)
                 try:
                     action = self._commands.get_nowait()
                 except queue.Empty:
@@ -382,10 +421,7 @@ class Session:
                     process.wait(timeout=5)
                     failure = failure or RuntimeError("hardware cleanup timed out")
             if process and process.returncode:
-                failure = failure or RuntimeError(
-                    f"hardware worker failed ({process.returncode}); "
-                    "inspect session log"
-                )
+                failure = failure or worker_failure(log, process.returncode)
             if audit:
                 try:
                     (episode_dir / "result.json").write_text(

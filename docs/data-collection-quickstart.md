@@ -11,8 +11,11 @@
 uv run agilex-data-collection serve
 ```
 
+启动命令会自动调用 SDK 的 CAN 配置脚本，必要时在终端输入 sudo 密码；
+默认 can0、1000000 bit/s。配置失败时不会启动网页服务，模拟模式完全跳过这一步。
+
 保持终端运行，打开 <http://127.0.0.1:8000>。首页用于采集，页面底部的
-“打开 LeLab 数据集浏览器”用于查看已保存的数据。
+“LeLab 数据集”用于查看已保存的数据，浏览页顶部可返回数据采集。
 
 **真机启动会 JS 回零并对齐 GELLO，停止时也会尝试回零。** 操作人员须在场，
 确认底座固定、运动空间清空、急停可用，且主手标定正确。
@@ -65,7 +68,8 @@ uv run agilex-data-collection serve --simulate
 ## 采集一段数据
 
 1. 填写“任务描述”，例如“将方块放入盒子”；该描述写入本次会话的数据。
-2. 真机模式勾选运动范围确认，点击“启动跟随”。等待状态变为 `following`，
+2. 真机模式先勾选运动范围确认，“启动跟随”按钮才会启用；模拟模式无需勾选。
+   点击“启动跟随”，等待状态变为 `following`，
    检查 RGB 预览和跟随是否正常；启动期间请勿重复点击。
 3. 点击“开始采样”，等待 `recording` 后完成动作。
 4. 点击“保存本段”，等待状态回到 `following`，并确认 `saved_episodes` 增加。
@@ -79,7 +83,7 @@ uv run agilex-data-collection serve --simulate
 
 ## 查看采集结果
 
-点击“打开 LeLab 数据集浏览器”，选择本次本地数据集和 episode，查看 RGB 视频、
+点击“LeLab 数据集”，选择本次本地数据集和 episode，查看 RGB 视频、
 关节曲线及帧数。首页状态中的 `dataset`、`raw` 字段给出本次实际保存路径。
 
 | 默认位置 | 内容 |
@@ -102,8 +106,12 @@ LeLab 当前用于只读浏览；深度通过 LeRobot 或原始 `.npy` 检查。
 | 现象 | 处理 |
 | --- | --- |
 | 提示先运行 setup | 执行 `uv run agilex-data-collection setup` |
+| “启动跟随”不可点击 | 填写任务描述，并在真机模式勾选运动范围确认；已有会话时先停止并等待清理完成 |
+| CLI 出现 `POST /api/start ... 409 Conflict` | 查看网页具体提示；未确认运动、任务为空或会话尚未结束时后端会拒绝启动，终端也会记录拒绝原因 |
 | 8000 端口被占用 | 停止旧服务，或用 `uv run agilex-data-collection serve --port 8001`，打开对应端口 |
 | 启动失败或状态为 `error` | 查看网页 `error` 和本次日志，等待清理结束，排除设备权限、占用或 CAN 问题后重试 |
+| 提示 `CAN interface can0 is DOWN` 或波特率不符 | 执行 `./agilex-sdk-python/scripts/config_can.sh` 配置链路后重试；自定义接口使用配置中的接口名和波特率 |
+| 提示 `startup_zero` / `exit_zero`、`JS positioning failed` | 每轴到位要求保持 1°；查看日志 `[position_result]` 的六轴反馈和残差，按[定位误差排查](data-collection.md#js-回零与定位误差)检查实际响应，不跳过校验 |
 | 相机快速模式不稳定 | 将 `config/data_collection.toml` 的 `camera_mode` 改为 `"slow"`，停止当前会话后重启服务 |
 | 时间偏差超限或写盘队列满 | 停止采集，检查相机、USB 链路、磁盘及负载；必要时降低 `dataset_fps`，保持其不超过 `control_hz` |
 | LeLab 看不到本次数据 | 确认至少保存了一段、`saved_episodes` 增加，停止跟随后刷新数据集列表 |
