@@ -56,3 +56,23 @@ sdk_project = "agilex-sdk-python"
 converter_project = "lerobot-converter"
 raw_data_root = "data/raw"
 lerobot_data_root = "data/lerobot"
+
+[collection]
+# Browser collection app. It reads [robot], [gello], [camera] and [paths] above
+# from this same file; set hardware_config to another TOML for an experiment.
+hardware_config = ""
+data_root = "data/lerobot/app"
+control_hz = 50
+dataset_fps = 30
+max_skew_ms = 50.0
+queue_size = 90
+watchdog_s = 1.0
+# Per-joint JS arrival tolerance for startup zero/alignment and exit zero.
+position_tolerance_deg = 1.1
+# Display only: colorized depth range and point-cloud decimation.
+preview_depth_max_m = 3.0
+preview_cloud_stride = 4
+camera_enabled = true
+# auto prefers measured 640x360@90; slow skips fast modes; manual uses [camera].
+camera_mode = "auto"
+depth_enabled = true

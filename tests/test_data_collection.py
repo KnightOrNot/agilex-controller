@@ -47,16 +47,24 @@ def test_serve_prepares_can_before_exec_only_for_hardware(
     assert events == (["exec"] if simulate else [(tmp_path, config_path), "exec"])
 
 
-def test_can_setup_uses_hardware_toml_and_shared_lock(tmp_path, monkeypatch):
+@pytest.mark.parametrize("external", [False, True])
+def test_can_setup_uses_hardware_toml_and_shared_lock(tmp_path, monkeypatch, external):
     import contextlib
 
     from agilex_controller import workflow
     from agilex_data_collection import configure_can
 
-    hardware = tmp_path / "hardware.toml"
-    hardware.write_text('[robot]\ncan_interface = "can7"\ncan_bitrate = 500000\n')
     app = tmp_path / "app.toml"
-    app.write_text('hardware_config = "hardware.toml"\n')
+    if external:
+        hardware = tmp_path / "hardware.toml"
+        hardware.write_text('[robot]\ncan_interface = "can7"\ncan_bitrate = 500000\n')
+        app.write_text('hardware_config = "hardware.toml"\n')
+    else:
+        # Empty hardware_config keeps both apps on the same shared file.
+        app.write_text(
+            '[robot]\ncan_interface = "can7"\ncan_bitrate = 500000\n'
+            '[collection]\ndata_root = "data/lerobot/app"\n'
+        )
     script = tmp_path / "agilex-sdk-python/scripts/config_can.sh"
     script.parent.mkdir(parents=True)
     script.touch()
@@ -113,6 +121,8 @@ def test_can_setup_failure_prevents_server_start(tmp_path, monkeypatch):
         "position_tolerance_deg = nan",
         'camera_mode = "invalid"',
         "camera_mode = []",
+        "hardware_config = 1",
+        "collection = 1",
         "unknown = 1",
     ],
 )
@@ -123,12 +133,25 @@ def test_reject_invalid_app_configuration(tmp_path: Path, text: str):
         AppConfig.load(path)
 
 
-def test_app_configuration_is_separate():
+def test_app_configuration_shares_the_default_file():
+    from agilex_controller.configuration import load_config
+
     project = Path(__file__).resolve().parents[1]
-    app = AppConfig.load(project / "config/data_collection.toml")
+    path = project / "config/default.toml"
+    app = AppConfig.load(path)
     assert app.dataset_fps == 30
     assert app.control_hz == 50
+    assert app.position_tolerance_deg == 1.1
     assert app.camera_enabled and app.depth_enabled
+    assert app.hardware_config == ""  # hardware sections come from this file
+    # The legacy loader ignores [collection] but still validates its own sections.
+    assert load_config(project, path).robot.can_interface == "can0"
+
+
+def test_standalone_flat_app_configuration_still_loads(tmp_path: Path):
+    path = tmp_path / "app.toml"
+    path.write_text('data_root = "custom"\n')
+    assert AppConfig.load(path).data_root == "custom"
 
 
 @pytest.mark.parametrize(

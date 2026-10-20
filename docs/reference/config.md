@@ -1,6 +1,10 @@
 # 配置参考
 
-默认配置位于 [config/default.toml](../../config/default.toml)。显式 `--config FILE` 选择另一份 TOML；未写字段由内置默认值补全。未知表、未知字段、非法维度和非有限数值会在硬件工作之前拒绝。命令行显式值优先。
+默认配置位于 [config/default.toml](../../config/default.toml)，命令行 controller 与
+浏览器数采 `agilex-data-collection` 共用这一份文件。显式 `--config FILE` 选择另一份
+TOML；未写字段由内置默认值补全。未知表、未知字段、非法维度和非有限数值会在
+硬件工作之前拒绝。命令行显式值优先。`[collection]` 只由浏览器数采解析，controller
+忽略该表。
 
 ## robot 与 safety
 
@@ -113,3 +117,41 @@ preview = false
 `png_compress_level` 是 0..9 的整数，默认 0：关闭 PNG 的压缩计算，仍然无损保存完整 RGB8/Z16。1..9 可以减小文件，但增加 CPU 负担；CLI `--camera-png-compress-level` 优先于 TOML。编码使用固定 None 行过滤以避免逐行自适应过滤开销。默认 640×480 双路 30 FPS 的图像数据约 46 MB/s（约 2.8 GB/分钟），请保留足够空间。增大 queue_size 仅能吸收瞬时写盘抖动，不能弥补长期吞吐不足；默认每路 32 帧约一秒缓冲。
 
 `max_skew_ms` 写入 manifest，约束转换时每路帧与目标时间的误差；不是曝光精度保证。`preview` 仅预览 RGB，独立进程可跳过显示帧但不跳过录制帧。`enabled=false` 是默认值，原有脚本保持无相机 raw v1；新的相机跟随/数采脚本通过 CLI 启用 camera 与 preview，覆盖 TOML。`depth_enabled=false` 仅关闭深度。
+
+## collection
+
+```toml
+[collection]
+hardware_config = ""
+data_root = "data/lerobot/app"
+control_hz = 50
+dataset_fps = 30
+max_skew_ms = 50.0
+queue_size = 90
+watchdog_s = 1.0
+position_tolerance_deg = 1.1
+preview_depth_max_m = 3.0
+preview_cloud_stride = 4
+camera_enabled = true
+camera_mode = "auto"
+depth_enabled = true
+```
+
+浏览器数采专用。`hardware_config` 为空表示 `[robot]`、`[gello]`、`[camera]` 和
+`[paths]` 就在当前文件（默认行为）；也可以填写另一份硬件 TOML 的相对路径，
+该文件仍由 controller 的加载器校验。`data_root` 是 LeRobot 数据集根目录（默认
+`data/lerobot/app`）。`control_hz`、`dataset_fps`、`queue_size` 和
+`preview_cloud_stride` 必须是正整数，且 `dataset_fps <= control_hz`。
+
+`max_skew_ms` 是 RGB、深度与机器人反馈之间允许的主机单调时钟偏差；
+`watchdog_s` 是控制心跳超时。`position_tolerance_deg` 是启动回零、GELLO 对齐和
+退出回零的每轴到位容差，当前用户授权值为 1.1°（J3 零位即机械上限，输出侧约
+0.5° 柔度）。不得通过扣除 offset、切换控制模式或自动重标定来规避超差。
+
+`camera_enabled`、`depth_enabled` 控制是否打开相机与深度；`camera_mode` 取
+`auto`、`fast`、`slow` 或 `manual`，`auto` 首选 640×360@90 并按逐路实测回退，
+`manual` 使用 `[camera]` 的 profile。`preview_depth_max_m` 和
+`preview_cloud_stride` 只影响深度着色与点云抽稀，不改变数据集或原始 `.npy`。
+
+独立的最小配置文件仍可使用扁平键（不写 `[collection]` 表）；多了一份
+`[collection]` 的共享文件则只读取该表。未知键会报错。

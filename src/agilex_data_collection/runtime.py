@@ -14,7 +14,13 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from pydantic import BaseModel
 
 from .config import AppConfig
@@ -29,10 +35,22 @@ class StartRequest(BaseModel):
     motion_confirmed: bool = False
 
 
+class DeleteDatasetRequest(BaseModel):
+    dataset_repo_id: str
+    delete_from_hub: bool = False
+
+
 def create_app(project: Path, config_path: Path, simulate: bool = False) -> FastAPI:
     config = AppConfig.load(config_path)
+    root = (project / config.data_root).resolve()
     # LeLab's media browser reads this at call time; collection uses the same root.
-    os.environ["HF_LEROBOT_HOME"] = str((project / config.data_root).resolve())
+    os.environ["HF_LEROBOT_HOME"] = str(root)
+    # LeRobot freezes HF_LEROBOT_HOME when imported. The adapters may import it
+    # before this app's root is known, so rebind the constant used for local
+    # LeRobotDataset(repo_id) lookups (upload/dataset-info) to the same root.
+    from lerobot.datasets import dataset_metadata
+
+    dataset_metadata.HF_LEROBOT_HOME = root
     session = Session(project, config_path, config, simulate)
     preview_cache: dict = {}
     preview_lock = threading.Lock()
@@ -50,19 +68,39 @@ def create_app(project: Path, config_path: Path, simulate: bool = False) -> Fast
             cached = preview_cache.get(mode)
             if cached and cached[0] == cache_key:
                 return cached[1]
+            depth = camera.get("depth") or {}
+            selection = camera.get("profile_selection", {})
+            measured = selection.get("measured_fps") or {}
+            color_width, color_height = camera["width"], camera["height"]
+            has_depth = "depth" in frames
+            depth_width = depth.get("width", color_width)
+            depth_height = depth.get("height", color_height)
+            # Report the dimensions actually delivered for the selected mode;
+            # color and depth profiles may differ.
+            width, height = {
+                "rgb": (color_width, color_height),
+                "depth": (depth_width, depth_height),
+                "rgbd": (color_width + depth_width, color_height),
+                "cloud": (depth_width, depth_height),
+            }[mode if has_depth else "rgb"]
             info = {
                 "type": "frame",
                 "mode": mode,
                 "sequence": snapshot["sequence"],
-                "width": camera["width"],
-                "height": camera["height"],
+                "width": width,
+                "height": height,
+                "color_width": color_width,
+                "color_height": color_height,
+                "depth_width": depth_width if has_depth else None,
+                "depth_height": depth_height if has_depth else None,
                 "capture_fps": camera.get("fps"),
-                "profile_mode": camera.get("profile_selection", {}).get(
-                    "requested_mode"
-                ),
+                "depth_fps": depth.get("fps") if has_depth else None,
+                # Measured transport rates from startup probing, when available.
+                "measured_capture_fps": measured,
+                "profile_mode": selection.get("requested_mode"),
                 "sample_fps": snapshot["sample_fps"],
                 "dataset_fps": config.dataset_fps,
-                "has_depth": "depth" in frames,
+                "has_depth": has_depth,
             }
             if mode == "cloud":
                 xyz = point_cloud(
@@ -122,19 +160,21 @@ def create_app(project: Path, config_path: Path, simulate: bool = False) -> Fast
         if origin and urlsplit(origin).netloc != socket.headers.get("host"):
             await socket.close(code=1008)
             return
+        # Claim the slot before the first await so concurrent handshakes cannot
+        # both pass the limit check.
         if preview_clients >= 2:
             await socket.close(code=1013)
-            return
-        await socket.accept()
-        if mode not in {"rgb", "depth", "rgbd", "cloud"}:
-            await socket.send_json({"type": "error", "detail": "未知预览模式"})
-            await socket.close(code=1003)
             return
         preview_clients += 1
         last_sequence = None
         period = 1 / config.dataset_fps
         next_delivery = time.monotonic()
         try:
+            await socket.accept()
+            if mode not in {"rgb", "depth", "rgbd", "cloud"}:
+                await socket.send_json({"type": "error", "detail": "未知预览模式"})
+                await socket.close(code=1003)
+                return
             while session.status()["phase"] in {
                 "following",
                 "recording",
@@ -214,8 +254,9 @@ def create_app(project: Path, config_path: Path, simulate: bool = False) -> Fast
             headers={"Cache-Control": "no-store"},
         )
 
-    # Reuse official read-only dataset endpoints and its built React browser.
-    # Do not expose SO101 motion/calibration, installers, or deletion endpoints.
+    # Reuse official dataset endpoints and its built React browser. Browsing,
+    # merge, upload and authentication are exposed; motion, calibration,
+    # training, inference, installers and deletion stay unavailable.
     from lelab.server import FRONTEND_DIST
     from lelab.server import app as official_app
 
@@ -228,7 +269,59 @@ def create_app(project: Path, config_path: Path, simulate: bool = False) -> Fast
             return RedirectResponse(str(request.url.include_query_params(api=origin)))
         return FileResponse(FRONTEND_DIST / "index.html")
 
-    allowed = {
+    from lelab import episode_media
+    from lelab.record import handle_delete_dataset
+
+    @app.post("/delete-dataset")
+    def delete_dataset(body: DeleteDatasetRequest):
+        """Delete one local dataset; Hub deletion stays out of this app."""
+        if body.delete_from_hub:
+            return JSONResponse(
+                {
+                    "success": False,
+                    "message": "仅支持删除本地副本；如需删除 Hub 仓库请使用 HF CLI。",
+                },
+                status_code=400,
+            )
+        try:
+            target = episode_media.resolve_dataset_dir(body.dataset_repo_id).resolve()
+        except episode_media.DatasetNotFoundError as exc:
+            return JSONResponse(
+                {"success": False, "message": str(exc)}, status_code=404
+            )
+        active = session.status()
+        if (
+            active.get("dataset")
+            and active["phase"] not in {"idle", "completed", "error"}
+            and Path(active["dataset"]).resolve() == target
+        ):
+            return JSONResponse(
+                {
+                    "success": False,
+                    "message": "当前会话正在使用该数据集，请先停止跟随并等待清理完成。",
+                },
+                status_code=409,
+            )
+        return handle_delete_dataset(body)
+
+    # Keep direct navigation to unimplemented LeLab pages from rendering the
+    # official workflow. Client-side links are disabled by the browser wrapper.
+    def unsupported_page():
+        return RedirectResponse("/dataset-browser")
+
+    for path in (
+        "/recording",
+        "/teleoperation",
+        "/training",
+        "/training/{job_id}",
+        "/inference",
+        "/calibration",
+    ):
+        app.add_api_route(
+            path, unsupported_page, methods=["GET"], include_in_schema=False
+        )
+
+    allowed_get = {
         "/dataset-episodes",
         "/dataset-episode",
         "/dataset-motion",
@@ -238,10 +331,21 @@ def create_app(project: Path, config_path: Path, simulate: bool = False) -> Fast
         "/hf-auth-status",
         "/health",
     }
+    # Merge/upload handlers are official LeLab implementations. Dataset info
+    # is read-only but uses POST; HF login supports the upload flow.
+    allowed_post = {
+        "/dataset-info",
+        "/datasets/merge",
+        "/upload-dataset",
+        "/hf-auth/login",
+    }
     for route in official_app.routes:
-        if getattr(route, "path", None) in allowed:
-            if getattr(route, "methods", set()) == {"GET"}:
-                app.router.routes.append(route)
+        path = getattr(route, "path", None)
+        methods = getattr(route, "methods", set()) or set()
+        if (path in allowed_get and methods == {"GET"}) or (
+            path in allowed_post and methods == {"POST"}
+        ):
+            app.router.routes.append(route)
         elif getattr(route, "name", None) == "frontend":
             app.router.routes.append(route)
     return app
@@ -257,7 +361,7 @@ def main() -> None:
     parser.add_argument("--simulate", action="store_true")
     args = parser.parse_args()
     project = args.project.resolve()
-    path = (args.config or project / "config/data_collection.toml").resolve()
+    path = (args.config or project / "config/default.toml").resolve()
     uvicorn.run(
         create_app(project, path, args.simulate), host="127.0.0.1", port=args.port
     )
@@ -270,9 +374,121 @@ content="width=device-width,initial-scale=1">
 *{box-sizing:border-box}body{margin:0;background:#f4f6fa;font:14px system-ui}
 header{height:48px;display:flex;align-items:center;gap:24px;padding:0 20px;
 border-bottom:1px solid #dfe5ef;background:white}a{color:#2459bb;text-decoration:none}
+header .note{color:#718096;font-size:12px}
 iframe{display:block;width:100%;height:calc(100dvh - 48px);border:0}
-</style><header><a href="/">← 返回数据采集</a><strong>LeLab 数据集浏览</strong></header>
-<iframe src="/edit-dataset" title="LeLab 官方数据集浏览器"></iframe></html>"""
+</style><header><a href="/">← 返回数据采集</a><strong>LeLab 数据集浏览</strong>
+<span class="note">仅开放浏览、合并、上传与删除；其余功能已禁用</span></header>
+<iframe id="lelab-frame" src="/edit-dataset" title="LeLab 官方数据集浏览器"></iframe>
+<script>
+(() => {
+  const frame = document.getElementById('lelab-frame');
+  const unsupportedRoutes = new Set([
+    '/', '/recording', '/teleoperation', '/training', '/inference', '/calibration']);
+  const unsupportedAria = new Set(['Start the guided tour']);
+  const unsupportedText = text =>
+    text === 'Back' || text === 'Back to Home' || text === 'Skip Upload' ||
+    text === 'Record more' || text.startsWith('Create new dataset') ||
+    text.startsWith('Take the tour');
+  const disable = element => {
+    if (element.dataset.lelabDisabled) return;
+    element.dataset.lelabDisabled = '1';
+    if (element.tagName === 'BUTTON') element.disabled = true;
+    element.setAttribute('aria-disabled', 'true');
+    element.title = '当前数采应用未启用此功能';
+    element.style.pointerEvents = 'none';
+    element.style.opacity = '.45';
+    element.style.cursor = 'not-allowed';
+  };
+  const apply = () => {
+    const doc = frame.contentDocument;
+    if (!doc || !doc.body) return;
+    for (const link of doc.querySelectorAll('a[href]')) {
+      try {
+        const url = new URL(link.getAttribute('href'), doc.baseURI);
+        if (url.origin === location.origin && unsupportedRoutes.has(url.pathname))
+          disable(link);
+      } catch (error) {}
+    }
+    for (const button of doc.querySelectorAll('button')) {
+      const text = (button.innerText || button.textContent || '').trim();
+      if (unsupportedText(text) ||
+          unsupportedAria.has(button.getAttribute('aria-label'))) disable(button);
+    }
+    // Local deletion only: never offer/allow Hub repository deletion here.
+    for (const box of doc.querySelectorAll('#delete-from-hub')) disable(box);
+    // Upload/merge internals are not useful while operating the collection.
+    const textOf = node => (node.innerText || node.textContent || '').trim();
+    const hide = node => {
+      if (!node || node.dataset.lelabHidden) return;
+      node.dataset.lelabHidden = '1';
+      node.style.display = 'none';
+    };
+    for (const label of doc.querySelectorAll('span')) {
+      if (textOf(label) === 'Repository ID:') hide(label.parentElement);
+    }
+    for (const heading of doc.querySelectorAll('h3')) {
+      if (textOf(heading) !== 'About HuggingFace Hub Upload') continue;
+      let card = heading.parentElement;
+      while (card && card !== doc.body &&
+             !(card.className || '').includes('rounded-lg')) {
+        card = card.parentElement;
+      }
+      hide(card && card !== doc.body ? card : heading.parentElement);
+    }
+    for (const note of doc.querySelectorAll('p')) {
+      if (textOf(note).startsWith('Saved locally as ')) hide(note);
+    }
+  };
+  const rewriteHistory = win => {
+    if (!win || win.__lelabHistoryPatched) return;
+    win.__lelabHistoryPatched = true;
+    for (const method of ['pushState', 'replaceState']) {
+      const original = win.history[method];
+      win.history[method] = function (state, title, url) {
+        try {
+          const target = new URL(url || win.location.href, win.location.href);
+          if (unsupportedRoutes.has(target.pathname)) url = '/edit-dataset';
+        } catch (error) {}
+        return original.call(this, state, title, url);
+      };
+    }
+  };
+  // The official picker keeps its dataset list in React state. A successful
+  // delete leaves the removed name visible until a full reload refetches it.
+  const reloadAfterDelete = win => {
+    if (!win || win.__lelabDeletePatched) return;
+    win.__lelabDeletePatched = true;
+    const original = win.fetch;
+    win.fetch = async function (...args) {
+      const response = await original.apply(this, args);
+      try {
+        const url = (typeof args[0] === 'string' ? args[0] : args[0]?.url) || '';
+        if (url.includes('/delete-dataset') && response.ok) {
+          const data = await response.clone().json();
+          if (data && data.success && !win.__lelabDeleteReloading) {
+            win.__lelabDeleteReloading = true;
+            setTimeout(() => {win.location.href = '/edit-dataset';}, 500);
+          }
+        }
+      } catch (error) {}
+      return response;
+    };
+  };
+  let observer = null;
+  const attach = () => {
+    apply();
+    rewriteHistory(frame.contentWindow);
+    reloadAfterDelete(frame.contentWindow);
+    if (observer) observer.disconnect();
+    const doc = frame.contentDocument;
+    if (doc && doc.body) {
+      observer = new MutationObserver(apply);
+      observer.observe(doc.body, {childList: true, subtree: true});
+    }
+  };
+  frame.addEventListener('load', attach);
+})();
+</script></html>"""
 
 
 PAGE = """<!doctype html>
@@ -306,9 +522,7 @@ display:flex;align-items:center;justify-content:center;overflow:hidden}
 gap:12px;margin-bottom:12px}.preview-head h2{margin:0}
 select{padding:6px 10px;background:#fff}#preview-stats{margin-top:10px;
 font:12px ui-monospace,monospace;color:#718096;min-height:18px}
-pre{white-space:pre-wrap;font-size:12px;line-height:1.6;max-height:260px;
-overflow:auto;padding:12px;background:#f5f7fb;border-radius:8px}
-summary{cursor:pointer;color:#66758d;font-size:12px}a{color:#2563eb}
+a{color:#2563eb}
 @media(max-width:640px){body{padding:0 12px;margin:16px auto}.card{padding:14px}
 header{align-items:flex-start}#stop{margin-left:0}}
 </style><header><div><h1>AgileX Data Collection
@@ -335,8 +549,6 @@ value="PiPER-X GELLO teleoperation"></label>
 <img id="preview" alt="启动跟随后显示相机预览">
 <canvas id="cloud" aria-label="三维点云：拖动旋转，滚轮缩放"></canvas></div>
 <p id="preview-stats">等待相机 · 点云支持拖动旋转 / 滚轮缩放 / 双击复位</p></section>
-<details class="card"><summary>会话详情</summary>
-<pre id="status">连接中…</pre></details>
 <script src="/collection-assets/pointcloud.js"></script><script>
 const $=id=>document.getElementById(id);
 let currentStatus=null,startPending=false;
@@ -347,9 +559,20 @@ const activePhases=['following','recording','saving','discarding',
 function previewStats(){
 if(!previewInfo)return;
 const s=previewInfo;
+const depth=s.mode==='depth'||s.mode==='cloud';
+const size=s.mode==='rgbd'
+?`RGB ${s.color_width}×${s.color_height} + 深度 ${s.depth_width}×${s.depth_height}`
+:`${s.width}×${s.height}`;
+const measured=s.measured_capture_fps||{};
+const shown=value=>value==null?'—':Number(value).toFixed(1);
+const colorFps=shown(measured.color??s.capture_fps);
+const depthFps=shown(measured.depth??s.depth_fps);
+const rate=s.mode==='rgbd'
+?`捕获 RGB ${colorFps} / 深度 ${depthFps} FPS`
+:`捕获 ${depth?depthFps:colorFps} FPS`;
 $('preview-stats').textContent=`预览 ${previewFps.toFixed(1)} FPS · `+
 `采样 ${s.sample_fps.toFixed(1)} / ${s.dataset_fps} FPS · `+
-`${s.width}×${s.height} @ ${s.capture_fps||'—'} FPS · ${s.profile_mode||'manual'}`+
+`${size} · ${rate} · ${s.profile_mode||'manual'}`+
 (s.mode==='cloud'?` · ${s.points} 点（深度坐标系，按距离着色）`:'');
 }
 function maintainPreview(){
@@ -389,6 +612,9 @@ const image=$('preview');
 image.onload=image.onerror=()=>{URL.revokeObjectURL(url);resolve();};image.src=url;});
 }
 if(generation!==previewGeneration)return;
+// Start timing after the first decode; WebGL/shader setup can block for
+// seconds and would otherwise depress the first reported FPS.
+if(!previewFrames)previewTime=performance.now();
 previewFrames++;
 const elapsed=(performance.now()-previewTime)/1000;
 if(elapsed>=1){previewFps=previewFrames/elapsed;previewFrames=0;
@@ -440,7 +666,7 @@ for(const action of ['record','save','discard','stop'])
 $(action).onclick=()=>post('/api/control/'+action);
 async function update(){try{const r=await fetch('/api/status');
 if(!r.ok)throw Error('状态读取失败');
-const s=await r.json();$('status').textContent=JSON.stringify(s,null,2);
+const s=await r.json();
 if(s.error)$('error').textContent=s.error;
 else if(currentStatus?.error)$('error').textContent='';
 currentStatus=s;controls();

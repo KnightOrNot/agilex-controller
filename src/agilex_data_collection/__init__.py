@@ -17,7 +17,8 @@ def configure_can(project: Path, app_path: Path) -> None:
     from .config import AppConfig
 
     app = AppConfig.load(app_path)
-    config = load_config(project, project / app.hardware_config)
+    hardware_path = project / app.hardware_config if app.hardware_config else app_path
+    config = load_config(project, hardware_path)
     script = config.path("sdk_project") / "scripts/config_can.sh"
     if not script.is_file():
         raise FileNotFoundError(f"CAN configuration script not found: {script}")
@@ -78,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             configure_can(
                 project,
-                (args.config or project / "config/data_collection.toml").resolve(),
+                (args.config or project / "config/default.toml").resolve(),
             )
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
             parser.error(f"CAN 配置失败：{exc}")

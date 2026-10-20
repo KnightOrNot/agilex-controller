@@ -1,41 +1,47 @@
 # Changelog
 
-## Unreleased
+按版本简要记录主要变更。用法、配置和排障见 [README](README.md)。
 
-- 数采网页在运动未确认、任务为空或启动请求处理中禁用启动按钮并显示中文原因；保留后端确认保护，终端记录 409 的具体拒绝原因，模拟模式无需运动确认。
+## 0.1.0（未发布，2026-10-20）
 
-- 新数采链路将 JS 定位容差显式配置为 1°，启动/对齐/退出一致使用；新增不增加 RPC 的六轴定位诊断，保留主异常与清理异常，避免缓冲清理日志掩盖实际回零超差。保持旧 controller 与 SDK 硬件层不变。
+### 新增
 
-- 新数采链路在初始化设备前检查 CAN UP 状态与波特率，并在网页错误中展示硬件子进程最终诊断，避免仅提示 worker 退出；补充重启、重插 USB-CAN 后的配置说明。
+- 两个并列入口：命令行 `agilex-controller` 负责跟随、raw 录制和离线转换；
+  `agilex-data-collection` 提供浏览器按键数采，直接写入 LeRobot Dataset v3。
+- 浏览器面板支持启动/停止跟随、采样、保存、丢弃，并显示状态、错误和已保存集数。
+- RGB、深度、RGB + 深度和交互式 3D 点云预览，按数据集 FPS 推送，显示浏览器
+  预览 FPS、采样/目标 FPS、两路分辨率和实测捕获 FPS。
+- LeLab 数据集浏览、本地合并、Hugging Face 上传和本地删除；未实现功能禁用，
+  `/jobs` 保持预期 404。
+- 相机 640×360@90 优先，逐路测速后按 90/60/30 回退；保留原生 Z16、标定和时间戳。
+- 五个一级子模块统一提供 `config/default.toml` 和本地配置加载器。
+- 新增独立 `agilex-adapters` 子模块，提供 LeRobot 设备适配和私有 Unix IPC。
 
-- 相机库新增 640×360@90 FPS 优先、逐流吞吐探测和 90/60/30 启动回退；
-  新数采应用默认 camera_mode=auto，保留旧 controller 的显式 profile。
-- 五个一级子模块全部提供 config/default.toml，补齐 SDK、GELLO 本地读取、
-  converter 和 adapters 的配置加载、覆盖校验、包内默认值和文档。SDK 硬件驱动、
-  原生 GELLO 及既有 controller 运行源码保持不变；USB3 相机实测待完成。
+### 变更
 
-- 新增独立 `agilex-data-collection` 入口与 Python 3.12 应用环境，引入
-  `agilex-adapters` 子模块，为 PiPER-X/GELLO 提供 LeRobot 设备接口。
-- 新增浏览器跟随/采样/保存/丢弃/停止面板，直接写入 LeRobot RGB-D 数据集，
-  保留原始 Z16、校准与时间审计信息，接入 LeLab 官方只读数据浏览功能。
-  原 controller 源码、配置和 Shell 入口保持不变；真机联调待操作人员验证。
+- 配置统一到 `config/default.toml`：controller 使用原有表，浏览器数采使用
+  `[collection]`；删除独立的 `config/data_collection.toml`。
+- 文档精简：删除两份数采专文，合并进 README、架构、安装、配置、CLI 和排障文档。
+- JS 定位容差从 1.0° 调整为 1.1°。J3 零位即机械上限，输出侧约 0.5° 柔度导致
+  启动/退出回零残差约 1.0°；不扣 offset、不自动重标定、不切换运动模式。
+- 数采前端移除原始状态 JSON、Repository ID、HuggingFace 说明和内部路径提示，
+  保留预览统计、数据集元数据和未实现功能的禁用状态。
 
-- 图像写盘改用固定行过滤的快速无损 PNG，默认 png_compress_level=0，保留逐文件 fsync 和原始 RGB/Z16；新增 TOML/CLI 压缩等级配置、队列满吞吐诊断和无损读回测试，避免自适应 PNG 编码导致持续积压。
+### 修复
 
-- 修复相机预热期间帧号回退直接中断启动：双流就绪前重新建立基线，运行期仍严格报错；补充相机就绪提示和启动超时诊断。
+- 删除本地数据集后重新加载 LeLab 数据集列表，已删除名称不再残留。
+- 相机预热期间帧号回退时重建基线，运行期仍严格报错。
+- CAN 未启用或波特率不符时给出明确诊断，网页显示 worker 最终错误。
+- 图像写盘改用固定行过滤的无损 PNG，避免编码积压；保留逐文件 fsync。
 
-- 引入 camera-realsense submodule，新增 start_camera_follow.sh / start_camera_record.sh，分别提供跟随预览和 RGB-D 数采；原有脚本与默认配置恢复无相机流程。
-- 新增 raw v2 无损 RGB/Z16 图像、独立 SDK 时间戳与标定；保留无相机 raw v1。
-- converter 按同一目标轴独立匹配关节/RGB/深度，超限拒绝，输出 RGB MP4 与无损米制深度图像，并报告匹配质量。
-- 新增 RGB-D 录制失败清理、缺帧/队列满和真实 LeRobot 视频/深度读回回归；实体相机与机械臂联调待验证。
+## 0.0.0（初始开发，2026-09 至 2026-10）
 
-- GELLO 恢复原始上游目录，将本地 API/生命周期适配留在 src；安装流程初始化固定 DynamixelSDK，两个 uv.lock 同步依赖来源，保留现有 controller 调用与 raw 格式。
-- 统一三个 submodule 的 README、贡献/agent 指南、版本记录和 docs 结构，更新独立使用与 controller 联调说明；保留已有许可并记录未选定许可的项目状态。
-- 将 PiPER-X/GELLO 的客户端组合、设备预检、JS 对齐、跟随、原始录制和退出流程迁入 Python 3.11 controller。
-- 增加 `uv run agilex-controller` 的 config、read、status、follow、record、movejs、convert 命令及 follow-record 别名。
-- 将设备校准和应用默认值集中到 `config/default.toml`，支持配置文件与命令行覆盖。
-- 保留 raw v1 格式和 converter 的独立 Python 3.12 进程，新增真实转换与读回测试。
-- 将两个运行脚本简化为 CLI 包装，修正三个脚本迁入 scripts 后的项目根目录。
-- 从 GELLO 库移除 PiPER-X 专用命令、录制器及旧实验包装，恢复库自身的上游 YAM 配置；保留主手 API 和通用上游工作流。
-- 补充 RPC 超时、端口占用检查、信号清理、初始化失败和保存中断回归。
-- 更新安装、命令、配置、架构和多仓库开发文档。SDK 与 converter 的源代码保持原样。
+- 将 GELLO 读取、PiPER-X 客户端组合、设备预检、JS 对齐、跟随和 raw 录制迁入
+  Python 3.11 controller，提供 `config`、`read`、`status`、`follow`、`record`、
+  `movejs`、`convert` 命令和 Shell 包装脚本。
+- 新增 raw v1 和相机 raw v2：无损 RGB/Z16、独立 SDK 时间戳、标定和 manifest。
+- `lerobot-converter` 在独立 Python 3.12 环境完成时间匹配、LeRobot 数据集和
+  质量报告。
+- 引入 `camera-realsense` 子模块和相机跟随/数采脚本；原有脚本保持无相机流程。
+- GELLO 恢复上游目录结构，本地适配留在 `src/`，固定嵌套 DynamixelSDK。
+- 补充 RPC 超时、端口占用、信号清理、初始化失败、写盘失败和保存中断回归。

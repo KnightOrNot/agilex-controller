@@ -67,6 +67,27 @@ uv run agilex-controller status
 
 FFmpeg/TorchCodec 问题属于 converter 环境：执行 `ffmpeg -version` 和 `lerobot-converter/.venv/bin/python -c "from torchcodec.decoders import VideoDecoder"`。时间序列、维度或 raw 格式错误依据 converter 的错误位置排查，保持原始数据不变。
 
+## 浏览器数采
+
+| 现象 | 处理 |
+| --- | --- |
+| 提示先运行 setup | 执行 `uv run agilex-data-collection setup` |
+| “启动跟随”不可点击 | 填写任务描述，真机模式勾选运动范围确认；已有会话时先停止并等待清理 |
+| `POST /api/start ... 409` | 未确认运动、任务为空或会话尚未结束；网页与终端都会给出原因 |
+| 8000 端口被占用 | 停止旧服务，或 `serve --port 8001` 后打开对应端口 |
+| 初始化失败、状态为 `error` | 查看网页错误和 `data/logs/<session>.log`；清理结束后排除设备权限、占用或 CAN 问题再重试 |
+| 启动时提示另一个 workflow 正在运行 | 应用锁被旧流程持有；正常退出旧流程，不要删除锁文件绕过 |
+| `startup_zero` / `exit_zero`、`JS positioning failed` | 容差为 1.1°；查看 `[position_result]` 的六轴反馈、残差和观测范围，先做只读 `motor-status`，不跳过校验 |
+| 相机快速模式不稳定 | 把 `[collection].camera_mode` 改为 `"slow"`，停止会话后重启 |
+| 深度或点云预览报错 | 确认 `depth_enabled = true` 且已进入 `following`；点云要求无畸变 rectified 深度标定 |
+| 点云不显示 | 启用浏览器 WebGL，刷新并关闭多余标签页；预览最多两个连接 |
+| 采样 FPS 低于目标 / `max_skew_ms` 超限 | 检查相机、USB、磁盘和负载；必要时降低 `dataset_fps`，保持不超过 `control_hz` |
+| LeLab 看不到新数据 | 确认已保存至少一段且 `saved_episodes` 增加，停止跟随后刷新列表 |
+| Merge 按钮不可用 | 至少选择两个本地数据集并填写合法名称（字母、数字、`.`、`_`、`-`） |
+| Upload 失败 | 终端执行 `hf auth login`，确认网络可访问 huggingface.co；上传会发布数据 |
+| 删除数据集失败 | 被当前会话占用时先停止跟随；界面只删除本地副本，Hub 仓库用 HF CLI 删除 |
+| 按钮为灰色或侧栏 Couldn't load jobs | 未实现的录制/训练/标定等功能被主动禁用；`/jobs` 按预期返回 404 |
+
 ## 退出异常
 
 正常终止使用 Ctrl+C 或 SIGTERM。清理阶段屏蔽重复停止信号，先尝试 JS 回零，再停止所拥有的服务。回零失败会明确报告，不额外 reset、切换模式或自动失能；按现场硬件状态和急停流程处置。

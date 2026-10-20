@@ -6,7 +6,7 @@
 uv run agilex-controller [--project-root PATH] [--config FILE] COMMAND [OPTIONS]
 ```
 
-公共选项也可以放在子命令后。`--project-root` 默认使用 editable 安装的源码根目录；使用 wheel 安装时应显式指定包含四个子项目的 checkout。`--config` 相对于当前工作目录解析，默认读取项目的 `config/default.toml`。所有命令支持 `--help`，帮助不会访问硬件。
+公共选项也可以放在子命令后。`--project-root` 默认使用 editable 安装的源码根目录；使用 wheel 安装时应显式指定包含各子项目的 checkout。`--config` 相对于当前工作目录解析，默认读取项目的 `config/default.toml`。所有命令支持 `--help`，帮助不会访问硬件。
 
 ## 命令
 
@@ -87,6 +87,24 @@ uv run agilex-controller convert data/raw/SESSION data/lerobot/DATASET \
 支持 `--converter-project`、`--fps`、`--repo-id`、`--without-velocity`、`--without-ee-pose`、`--max-camera-skew-ms`（正有限数，覆盖 manifest 每路最大匹配误差）。session/output 相对于调用时工作目录解析；converter 项目路径相对于项目根目录解析。
 
 controller 不导入 converter，使用其 `.venv/bin/python` 调用原 CLI，保留其返回码。转换不创建或控制硬件。目标目录必须尚不存在。
+
+## agilex-data-collection
+
+浏览器数采是独立的 Python 3.12 入口，与 `agilex-controller` 并列：
+
+```bash
+uv run agilex-data-collection setup [--python 3.12.14]
+uv run agilex-data-collection serve [--simulate] [--port 8000] [--config FILE]
+```
+
+`setup` 同步 `agilex-adapters/.venv` 并安装 LeRobot、LeLab 及网页依赖，需要网络。
+`serve` 启动网页与硬件 worker；默认读取 `config/default.toml` 的 `[collection]`，
+真机模式先按 `[robot]` 配置 CAN。`--simulate` 不访问机械臂、主手或相机，也跳过
+CAN 配置，但仍写入数据目录。`--port` 取 1..65535，默认 8000。
+
+网页提供“启动跟随/开始采样/保存本段/丢弃本段/停止跟随”、四种预览视角和
+`/dataset-browser`（官方 LeLab 数据集浏览、合并、上传、本地删除）。网页关闭
+不会停止会话；停止跟随或服务端 Ctrl+C 才会结束硬件进程。
 
 ## Shell 入口与退出码
 

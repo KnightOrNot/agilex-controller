@@ -1,8 +1,12 @@
 # 架构与数据流
 
+项目有两个并列入口，共用设备配置、硬件互斥锁和底层客户端：命令行 controller
+负责跟随与 raw 录制，浏览器数采负责按键采集并直接写入 LeRobot。
+
 ## 边界
 
-controller 是应用入口。它决定使用哪些客户端、何时启动或关闭服务，以及何时开始、保存或丢弃 episode。
+controller 是命令行入口。它决定使用哪些客户端、何时启动或关闭服务，以及何时
+开始、保存或丢弃 episode。浏览器数采以另一个进程编排同一套硬件。
 
 ```mermaid
 flowchart LR
@@ -13,6 +17,14 @@ flowchart LR
     C --> R[data/raw：JSONL、图像与 manifest]
     R --> L[converter：校验和时间对齐]
     L --> D[data/lerobot：Dataset v3]
+
+    W[agilex-data-collection：3.12 网页] -->|Unix IPC| H[硬件 worker：3.11]
+    H --> G
+    H --> A
+    H --> S
+    H --> R2[data/raw/app：RGB/Z16、时间审计]
+    H --> D2[data/lerobot/app：Dataset v3]
+    W -->|同源代理| B[LeLab：浏览、合并、上传、删除]
 ```
 
 | 运行单元 | 环境 | 数据/设备所有权 |
@@ -20,6 +32,8 @@ flowchart LR
 | controller + GELLO 基础包 + camera | 根目录 `.venv`，3.11 | GELLO 串口、相机、机器人客户端、应用状态、raw |
 | SDK server | SDK 自己的 `.venv`，3.11 | CAN、机械臂反馈与命令 |
 | converter | converter 自己的 `.venv`，3.12 | 只读 raw，写新 LeRobot 数据集 |
+| agilex-data-collection 网页 | `agilex-adapters/.venv`，3.12 | 浏览器 UI、预览编码、LeLab 集成 |
+| 硬件 worker + 适配器 | 根环境与 adapters 环境，3.11/3.12 | 复用 controller 的设备初始化与清理 |
 
 controller 的 `RobotClient` 是现有 SDK wire protocol 的应用侧适配器。本次未修改 SDK；协议仍为 ZMQ REQ/REP 和 pickle 的 `method/args` 请求。服务默认监听本机，部署时保持在可信网络范围内。
 
@@ -41,6 +55,24 @@ SDK 子进程不会随终端 Ctrl+C 先于回零退出。初始化中的停止�
 
 `--existing-server` 跳过本地 CAN/SDK 预检及服务启停。它仍会执行确认、启动回零、对齐和退出回零，因此要按同样的真实运动流程使用。
 
+## 浏览器数采生命周期
+
+`agilex-data-collection` 是独立的浏览器入口，与命令行 controller 并列，不替代
+也不调用旧 `run_workflow`：
+
+1. `serve` 在启动网页进程前，按 `[robot]` 调用 SDK 的 CAN 配置脚本；模拟模式跳过。
+2. 网页进程校验运动确认和任务描述，通过后拉起 3.11 硬件 worker。
+3. worker 获取共享互斥锁，复用 controller 的设备预检、GELLO 校准、SDK 服务和清理函数，
+   完成相机预热、JS 回零与 GELLO 对齐。
+4. 适配器通过 owner-private Unix IPC 收发动作；网页按 `dataset_fps` 发布预览，
+   编码在 3.12 进程完成，不阻塞控制线程。
+5. 采样帧、原始 RGB/Z16 与审计记录落盘；控制停止后看门狗触发清理。
+   正常退出先清理硬件，再刷新数据集。
+6. 数据集由官方 `LeRobotDataset` 直接写成 v3；LeLab 通过同源路由浏览、合并、
+   上传和删除本地副本。
+
+两条真机链路共享原有互斥锁，不能同时运行。进程间不暴露 pickle over TCP。
+
 ## 控制样本
 
 默认控制频率为 50 Hz。controller 读取主手、映射六轴目标、限制六轴单步变化，发送最终 action，再读取 observation；夹爪单独直接传递。
@@ -61,6 +93,10 @@ raw v1/v2 的关节行包含：
 
 一次 session 生成一份数据集；目标目录已存在时转换失败。相机使用 raw v2，图像与关节各自异步写盘；S 刷新全部写线程，先发布图像目录，最后发布正式关节 JSONL。正式关节文件是转换入口；异常集保持 partial，极端中断留下的孤立图像目录不单独转换。无相机继续写 v1。详见[相机与同步](cameras.md)。
 
+浏览器数采使用独立的 `data/raw/app/<session>/` 审计格式和
+`data/lerobot/app/<session>/` 输出，不经过 converter，也不要与旧 raw 混用转换命令。
+该格式保留原始 RGB uint8、原生 Z16、相机标定、钟差和每帧时间戳。
+
 ## 子项目独立文档
 
 各 submodule 的 README 提供独立快速开始，`docs/` 提供安装、CLI、配置与排障，CONTRIBUTING 说明开发检查与提交要求。
@@ -71,3 +107,4 @@ raw v1/v2 的关节行包含：
 | SDK | [README](../agilex-sdk-python/README.md) / [协议](../agilex-sdk-python/docs/index.md) | [CONTRIBUTING](../agilex-sdk-python/CONTRIBUTING.md) |
 | Camera | [README](../camera-realsense/README.md) / [采集 API](../camera-realsense/docs/stream.md) | [CONTRIBUTING](../camera-realsense/CONTRIBUTING.md) |
 | Converter | [README](../lerobot-converter/README.md) / [数据流](../lerobot-converter/docs/index.md) | [CONTRIBUTING](../lerobot-converter/CONTRIBUTING.md) |
+| Adapters | [README](../agilex-adapters/README.md) | [CONTRIBUTING](../agilex-adapters/CONTRIBUTING.md) |

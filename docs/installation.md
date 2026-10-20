@@ -14,7 +14,18 @@ cd agilex-controller
 ./scripts/setup.sh
 ```
 
-setup 从脚本位置找到仓库，初始化四个一级 submodule 以及 GELLO 内必需的 DynamixelSDK，通过 pyenv 选择各自 Python，再用 uv 的锁文件同步环境。它会安装 Ubuntu 系统包、按需安装 pyenv/uv，并检查 dialout。配置过程不访问 CAN/串口，不发送运动命令。
+setup 从脚本位置找到仓库，初始化五个一级 submodule 以及 GELLO 内必需的 DynamixelSDK，通过 pyenv 选择各自 Python，再用 uv 的锁文件同步环境。它会安装 Ubuntu 系统包、按需安装 pyenv/uv，并检查 dialout。配置过程不访问 CAN/串口，不发送运动命令。
+
+浏览器数采使用独立的 Python 3.12 环境，首次使用前安装：
+
+```bash
+uv run agilex-data-collection setup
+```
+
+它同步 `agilex-adapters/.venv`，安装 LeRobot（官方 v0.6.0）、LeLab（固定提交）
+和网页依赖，并构建前端，需要网络和 Node。默认 Python 3.12.14；已有完整解释器
+可用 `setup --python /path/to/python3.12`。根目录的 Python 3.11 环境不会安装
+这些依赖，两个环境互不替换。
 
 常用参数：
 
@@ -45,8 +56,12 @@ UV_NO_MANAGED_PYTHON=1 uv sync --project agilex-gello-software --frozen --python
 UV_NO_MANAGED_PYTHON=1 uv sync --project lerobot-converter --frozen --extra dataset --python "$python312"
 UV_NO_MANAGED_PYTHON=1 uv sync --project camera-realsense --frozen --python "$python311"
 UV_NO_MANAGED_PYTHON=1 uv sync --frozen --python "$python311"
+UV_NO_MANAGED_PYTHON=1 uv sync --project agilex-adapters --extra app --python "$python312"
 mkdir -p data/raw data/lerobot
 ```
+
+`agilex-adapters` 的 `app` extra 包含浏览器数采所需的 LeRobot、LeLab、FastAPI
+与 uvicorn。它不是根环境的依赖，也不影响命令行 controller。
 
 GELLO 和 camera-realsense 包通过根目录 `tool.uv.sources` 中的本地 editable 路径安装。controller 与 GELLO 独立 CLI 各自安装相同代码的基础依赖，这是两个独立环境；无需将多个虚拟环境加入 PYTHONPATH。
 
@@ -58,8 +73,12 @@ GELLO 的原生 `gello` 与本地适配由同一个分发包提供，DynamixelSD
 ./scripts/setup.sh --check-only
 uv run --frozen agilex-controller --help
 uv run --frozen agilex-controller config
+uv run agilex-data-collection --help
 uv run --frozen pytest
 ```
+
+浏览器数采自身的环境用 `uv run agilex-data-collection setup` 安装；`--help` 只验证
+3.11 入口，不读取 3.12 环境。
 
 脚本会检查 CLI、FFmpeg 与 converter 的 TorchCodec 加载。真实转换回归可通过 `uv run --frozen pytest -m integration` 单独运行。
 

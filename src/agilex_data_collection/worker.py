@@ -183,7 +183,9 @@ class PositionProbe:
 
 
 class Hardware:
-    def __init__(self, project: Path, app: AppConfig) -> None:
+    def __init__(
+        self, project: Path, app: AppConfig, config_path: Path | None = None
+    ) -> None:
         self._stack = contextlib.ExitStack()
         self.robot = None
         self.leader = None
@@ -193,7 +195,11 @@ class Hardware:
         self.app = app
         from agilex_controller.configuration import load_config
 
-        config = load_config(project, project / app.hardware_config)
+        if app.hardware_config:
+            hardware_path = project / app.hardware_config
+        else:
+            hardware_path = config_path or project / "config/default.toml"
+        config = load_config(project, hardware_path)
         self.config = replace(config, robot=replace(config.robot, hz=app.control_hz))
 
     def start(self) -> None:
@@ -454,7 +460,9 @@ def main() -> int:
     if not args.simulate and not args.motion_confirmed:
         parser.error("physical initialization requires explicit motion confirmation")
     app = AppConfig.load(args.config)
-    hardware = Simulation(app) if args.simulate else Hardware(args.project, app)
+    hardware = (
+        Simulation(app) if args.simulate else Hardware(args.project, app, args.config)
+    )
     stop = threading.Event()
 
     def interrupt(_number: int, _frame: Any) -> None:

@@ -28,10 +28,10 @@ SDK 的硬件驱动、CAN 脚本以及 GELLO 的原生 YAML/第三方代码保�
 原生 Z16、深度尺度和最终 profile 的标定信息完整保留。模式切换只发生在
 首帧交付前，不在录制中途重置帧号和时钟。测速验证采集吞吐，不验证磁盘吞吐。
 
-新应用在 `config/data_collection.toml` 中设置 `camera_mode`，默认 auto；
+新应用在 `config/default.toml` 的 `[collection]` 中设置 `camera_mode`，默认 auto；
 slow 直接测速低档，manual 使用主项目安装配置中的相机分辨率和 FPS。
 旧 controller 的显式 profile 继续使用原帧率，不被库的 auto 默认值覆盖。
 数据集 FPS 仍由应用独立配置，90 FPS 相机不会自动生成 90 FPS 数据集。
 
 细节见[相机配置参考](../../camera-realsense/docs/reference/config.md)与
-[新数采流程](../data-collection.md)。本轮未进行相机或机械臂实测。
+[配置参考](config.md)。本轮未进行相机或机械臂实测。

@@ -277,7 +277,9 @@ def load_config(
             data = tomllib.load(stream)
     else:
         data = {}
-    unknown = data.keys() - SECTIONS.keys()
+    # [collection] configures the separate browser app; it shares this file but
+    # is validated by agilex_data_collection.config.AppConfig.
+    unknown = data.keys() - SECTIONS.keys() - {"collection"}
     if unknown:
         raise ValueError(f"unknown configuration sections: {sorted(unknown)}")
     sections = {}
