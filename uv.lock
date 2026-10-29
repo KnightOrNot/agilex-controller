@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.11.*"
 
 [[package]]
@@ -51,7 +51,7 @@ dependencies = [
 requires-dist = [
     { name = "dm-control", marker = "extra == 'full'", specifier = ">=1.0.20" },
     { name = "dm-control", marker = "extra == 'simulation'", specifier = ">=1.0.20" },
-    { name = "dynamixel-sdk", editable = "agilex-gello-software/third_party/DynamixelSDK/python" },
+    { name = "dynamixel-sdk", specifier = "==4.0.5" },
     { name = "mujoco", marker = "extra == 'full'", specifier = ">=3.2" },
     { name = "mujoco", marker = "extra == 'simulation'", specifier = ">=3.2" },
     { name = "numpy", specifier = ">=1.26" },
@@ -168,14 +168,15 @@ wheels = [
 
 [[package]]
 name = "dynamixel-sdk"
-version = "3.7.51"
-source = { editable = "agilex-gello-software/third_party/DynamixelSDK/python" }
+version = "4.0.5"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyserial" },
 ]
-
-[package.metadata]
-requires-dist = [{ name = "pyserial" }]
+sdist = { url = "https://files.pythonhosted.org/packages/de/ad/05bb6c7fe54c01d2712398872b300891a5b6a0181e69335f4e1717d72805/dynamixel_sdk-4.0.5.tar.gz", hash = "sha256:498ba2090f5f9844ac0610553cc70b8c79e3f6f52f7911425cdb2857210b9630", size = 29695, upload-time = "2026-05-06T02:12:08.389Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/52/a5/319d15afd31997e54e5c88b2fe1d53d15c9e63c3b8d51eda40ddff629443/dynamixel_sdk-4.0.5-py3-none-any.whl", hash = "sha256:36f9c0c078cbb8e87f5413bfcf76da8f50ce07d17690c52e52ad0f0180a7d6d8", size = 103493, upload-time = "2026-05-06T02:12:06.77Z" },
+]
 
 [[package]]
 name = "iniconfig"

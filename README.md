@@ -42,8 +42,8 @@ data/lerobot/app/              浏览器数采直接写入的数据集
 
 五个一级子项目以 Git submodule 固定版本。controller 将 GELLO 基础包和相机库作为
 本地 editable 依赖安装；SDK 服务、converter 和浏览器数采使用各自的解释器，
-通过 IPC、ZMQ 和文件协作。GELLO 的原生 `gello/` 与本地 `src/` 适配分开维护，
-DynamixelSDK 由 GELLO 内固定的嵌套 submodule 提供。详见
+通过 IPC、ZMQ 和文件协作。当前 GELLO 的公开接口位于
+`src/agilex_gello_software/`，DynamixelSDK 使用其锁定的 PyPI 4.0.5。详见
 [GELLO 开发文档](agilex-gello-software/README.md)。
 
 ## 安装
@@ -274,8 +274,8 @@ Python 3.12 适配器通过 owner-private Unix IPC 连接 3.11 硬件进程；�
 
 浏览器数采的 `[collection].camera_mode="auto"` 默认优先 640×360@90 高速预设，
 逐路测速不足时按 90/60/30 回退；`slow` 直接尝试低速，`manual` 精确使用
-`[camera]` 的分辨率和 FPS。高速候选和探测阈值在
-`camera-realsense/config/default.toml` 的 `[performance]`。这不提高默认 30 FPS
+`[camera]` 的分辨率和 FPS。高速候选和探测阈值由 camera 库的 `ColorStream`
+定义。这不提高默认 30 FPS
 的数据集时间轴或 50 Hz 控制频率；实际 profile 以启动后的 metadata 为准。
 
 相机独立线程采集，R/S/D 同时管理各路数据。S 等全部写盘后才发布正式关节

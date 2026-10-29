@@ -1,12 +1,45 @@
 # Repository Guidelines
 
+## Current Remote Main Baseline (2026-10-29)
+
+The user authorized migrating all five submodules to their available remote main
+revisions because the previously recorded gitlinks could not be fetched. Commit
+and publish tested child repositories before updating and publishing root gitlinks;
+all five `.gitmodules` entries track `main` for explicit `--remote` upgrades.
+
+The current GELLO main uses the `agilex_gello_software` namespace and PyPI
+DynamixelSDK 4.0.5. Setup must not require a nested SDK or import `gello.*` on this
+baseline. Physical `DynamixelRobot(real=True)` rejects fake fallback. Camera and
+converter preserve packaged TOML defaults; SDK/GELLO/adapters use public CLI/API
+parameters supplied explicitly by the controller.
+
+Adapters run on Python 3.12 and provide the official LeRobot Robot/Teleoperator
+protocols over owner-private filesystem IPC. Their `app` extra pins LeRobot 0.6.0
+and LeLab `9b5afaee33baa1d773e499937564f3831d25de22`; retain the complete nested
+extras closure and direct torch/torchvision requirements with the CPU index.
+Converter independently uses LeRobot 0.6.1. Exercise both real dataset readbacks.
+
+Hardware validation remains separate: test runs use fake devices, local IPC and
+synthetic RGB-D input. No CAN configuration, serial access or motion is authorized
+by the software synchronization task. Earlier dated checkpoints below describe
+the unavailable historical implementation and are superseded by this baseline.
+
+Validated for this baseline: controller 122 tests (including real RGB-D converter
+round trips), adapters/application 12 (real private IPC, Python 3.11 worker,
+save/discard/readback, official factories and four WebSocket preview modes),
+camera 59, SDK 59, GELLO 12 and converter 12. Repository lint, camera/SDK Pyright,
+six distribution builds and wheel imports outside the checkouts passed. System
+FFmpeg and libusb were installed by the user. ROS 2's earlier remote build/test
+step passed; its subsequent missing-imageName post-step was fixed with
+`push: never`, pending a fresh full workflow run.
+
 ## Project Structure & Responsibilities
 
 - `src/agilex_controller/` owns configuration, client composition, SDK subprocess lifecycle, JS positioning, following, and raw RGB-D recording.
 - `src/agilex_data_collection/` owns the parallel browser collection app, hardware worker, preview encoding and LeLab integration. Both entries are first-class and commonly used.
 - `config/default.toml` is the single application config: controller sections plus the `[collection]` table for the browser app. It contains installation-specific GELLO calibration. Pass calibration through `DynamixelRobotConfig`; do not patch the library's port map for this installation.
 - `agilex-gello-software/`, `agilex-sdk-python/`, `lerobot-converter/`, `camera-realsense/`, and `agilex-adapters/` are independent Git submodules. Keep robot hardware access in SDK, camera acquisition in its library, timestamp matching/conversion in converter, and LeRobot device protocols in adapters.
-- GELLO preserves upstream `gello/`, tools, and configs; local adaptations belong in its `src/`. Its pinned DynamixelSDK submodule is a required uv source. Run its offline upstream audit after changes.
+- The 2026-10-29 user-authorized baseline uses the five remote main branches. GELLO main exposes `src/agilex_gello_software/` and pins PyPI DynamixelSDK 4.0.5; it has no `gello/` namespace, nested SDK or offline upstream audit command. Preserve its public interfaces and explicit calibration. Older upstream-adapter notes below describe the unavailable historical baseline.
 - `scripts/` contains five Shell entry points: setup and four thin controller wrappers for legacy/camera following and recording. New camera wrappers enable capture and preview; keep the legacy defaults camera-free.
 - `tests/` covers controller behavior; `docs/` contains architecture, installation, CLI, configuration, and troubleshooting. Preserve hardware reference assets.
 - `data/raw/` is immutable input; `data/lerobot/` is regenerated output. Neither belongs in Git.

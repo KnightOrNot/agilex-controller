@@ -90,7 +90,7 @@ if [[ "$install_system" == true ]]; then
     sudo apt-get install -y \
         build-essential curl ffmpeg git iproute2 libbz2-dev libffi-dev \
         liblzma-dev libncursesw5-dev libreadline-dev libsqlite3-dev \
-        libssl-dev libxml2-dev libxmlsec1-dev lsof make tk-dev xz-utils \
+        libssl-dev libusb-1.0-0 libxml2-dev libxmlsec1-dev lsof make tk-dev xz-utils \
         zlib1g-dev
 else
     log "[1/7] 检查基础命令"
@@ -146,7 +146,11 @@ if [[ "$update_submodules" == true ]]; then
     git submodule sync
     git submodule update --init
     git -C agilex-gello-software submodule sync
-    git -C agilex-gello-software submodule update --init third_party/DynamixelSDK
+    # Older GELLO revisions used a source SDK; the current main pins PyPI 4.0.5.
+    if git -C agilex-gello-software config --file .gitmodules \
+        --get submodule.third_party/DynamixelSDK.path >/dev/null 2>&1; then
+        git -C agilex-gello-software submodule update --init third_party/DynamixelSDK
+    fi
     if [[ "$install_simulation_assets" == true ]]; then
         git -C agilex-gello-software submodule update \
             --init third_party/mujoco_menagerie
@@ -160,8 +164,11 @@ for submodule_path in agilex-sdk-python agilex-gello-software lerobot-converter 
         || fail "$submodule_path 尚未初始化；请取消 --skip-submodules"
 done
 
-[[ -f agilex-gello-software/third_party/DynamixelSDK/python/setup.py ]] \
-    || fail "GELLO 的 DynamixelSDK 尚未初始化；请初始化该嵌套 submodule 后重试"
+if git -C agilex-gello-software config --file .gitmodules \
+    --get submodule.third_party/DynamixelSDK.path >/dev/null 2>&1; then
+    [[ -f agilex-gello-software/third_party/DynamixelSDK/python/setup.py ]] \
+        || fail "GELLO 的 DynamixelSDK 尚未初始化；请初始化该嵌套 submodule 后重试"
+fi
 
 sync_project() {
     local project_dir="$1"
@@ -211,7 +218,7 @@ fi
 
 .venv/bin/python -m agilex_controller --help >/dev/null
 .venv/bin/python -c "from agilex_gello_software.agents.gello_agent import GelloAgent; from agilex_controller.configuration import load_config; load_config()"
-.venv/bin/python -c "from gello.agents.gello_agent import GelloAgent; import dynamixel_sdk"
+.venv/bin/python -c "from agilex_gello_software.agents.gello_agent import GelloAgent; import dynamixel_sdk"
 .venv/bin/python -c "from camera_realsense.stream import ColorStream; from PIL import Image"
 agilex-sdk-python/.venv/bin/agilex-sdk-python --help >/dev/null
 agilex-sdk-python/.venv/bin/agilex-sdk-python-server --help >/dev/null

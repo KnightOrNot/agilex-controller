@@ -1,15 +1,20 @@
 [submodule "agilex-sdk-python"]
 	path = agilex-sdk-python
+	branch = main
 	url = git@github.com:KnightOrNot/agilex-sdk-python.git
 [submodule "agilex-gello-software"]
 	path = agilex-gello-software
+	branch = main
 	url = git@github.com:KnightOrNot/agilex-gello-software.git
 [submodule "lerobot-converter"]
 	path = lerobot-converter
+	branch = main
 	url = git@github.com:KnightOrNot/lerobot-converter.git
 [submodule "camera-realsense"]
 	path = camera-realsense
+	branch = main
 	url = git@github.com:KnightOrNot/camera-realsense.git
 [submodule "agilex-adapters"]
 	path = agilex-adapters
+	branch = main
 	url = git@github.com:KnightOrNot/agilex-adapters.git
