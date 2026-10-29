@@ -29,9 +29,10 @@ round trips), adapters/application 12 (real private IPC, Python 3.11 worker,
 save/discard/readback, official factories and four WebSocket preview modes),
 camera 59, SDK 59, GELLO 12 and converter 12. Repository lint, camera/SDK Pyright,
 six distribution builds and wheel imports outside the checkouts passed. System
-FFmpeg and libusb were installed by the user. ROS 2's earlier remote build/test
-step passed; its subsequent missing-imageName post-step was fixed with
-`push: never`, pending a fresh full workflow run.
+FFmpeg and libusb were installed by the user. The full remote ROS 2 workflow
+passed on GELLO `04c6e1a` (run `40887299012`, 16m39s), including the post-step
+fixed with `push: never`. A fresh remote clone checked out all five pinned
+commits and passed the offline lock consistency check.
 
 ## Project Structure & Responsibilities
 
